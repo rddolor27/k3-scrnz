@@ -1,6 +1,7 @@
 import { type JSX, useEffect, useState } from 'react'
 
 import { type Endpoint, getEndpoint } from './lib/ipc'
+import { error, info } from './lib/log'
 import { checkLoopback, type LoopbackCheck } from './lib/ws'
 
 type Check =
@@ -20,8 +21,16 @@ export const App = (): JSX.Element => {
 			try {
 				const endpoint = await getEndpoint()
 				const result = await checkLoopback(endpoint)
+				if (result.ok) {
+					void info(
+						`loopback check ok: ${result.bytes} B echoed in ${result.rttMs.toFixed(1)} ms`,
+					)
+				} else {
+					void error(`loopback check failed: ${result.error}`)
+				}
 				if (live) setCheck({ phase: 'done', endpoint, result })
 			} catch (e) {
+				void error(`loopback check could not run: ${String(e)}`)
 				if (live) setCheck({ phase: 'failed', error: String(e) })
 			}
 		}

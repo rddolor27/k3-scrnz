@@ -4,6 +4,9 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 
 import { App } from './App'
+import { logUncaughtErrors } from './lib/log'
+
+logUncaughtErrors()
 
 const root = document.getElementById('root')
 if (!root) throw new Error('index.html is missing the #root element')
