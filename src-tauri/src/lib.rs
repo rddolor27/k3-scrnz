@@ -1,6 +1,7 @@
 pub mod adb;
 mod config;
 mod devices;
+mod displays;
 mod files;
 mod ws;
 
@@ -49,8 +50,19 @@ pub fn run() {
             app.manage(endpoint);
 
             let config = Arc::new(config::ConfigStore::load());
-            let hub = Arc::new(devices::DeviceHub::new(app.handle().clone(), config));
+            let hub = Arc::new(devices::DeviceHub::new(
+                app.handle().clone(),
+                Arc::clone(&config),
+            ));
             devices::start(Arc::clone(&hub), adb::find_adb());
+            // Feature modules register their state here, before the hub is managed.
+            let display_hub = Arc::new(displays::DisplayHub::new(
+                app.handle().clone(),
+                Arc::clone(&hub),
+            ));
+            displays::start(Arc::clone(&display_hub));
+            app.manage(display_hub);
+            app.manage(Arc::clone(&config));
             app.manage(hub);
             Ok(())
         })
@@ -59,6 +71,8 @@ pub fn run() {
             devices::list_devices,
             devices::get_adb_status,
             devices::set_device_name,
+            displays::get_displays,
+            displays::set_visible_device,
             files::list_dir,
             files::download_file,
             files::upload_path,
