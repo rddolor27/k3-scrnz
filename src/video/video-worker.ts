@@ -1,6 +1,6 @@
 import { connect } from '../lib/ws'
 import { avcCodecString } from './codec-string'
-import type { WorkerEvent, WorkerInit } from './protocol'
+import type { WorkerEvent, WorkerRequest } from './protocol'
 
 const K_SESSION = 1
 const K_CONFIG = 2
@@ -30,9 +30,10 @@ let errors = 0
 let failed = false
 let highLag = 0
 let lagReported = false
+let drawn = false
 
-const post = (event: WorkerEvent): void => {
-	self.postMessage(event)
+const post = (event: WorkerEvent, transfer: Transferable[] = []): void => {
+	self.postMessage(event, { transfer })
 }
 
 const requestKey = (): void => {
@@ -57,6 +58,7 @@ const onFrame = (frame: VideoFrame): void => {
 				canvas.height = frame.displayHeight
 			}
 			ctx.drawImage(frame, 0, 0)
+			drawn = true
 		}
 	} finally {
 		frame.close() // always: hardware output buffers are finite
@@ -208,15 +210,37 @@ const onEnvelope = (buf: ArrayBuffer): void => {
 	}
 }
 
-self.onmessage = (e: MessageEvent<WorkerInit>): void => {
-	const init = e.data
-	if (init.type !== 'init') return
-	canvas = init.canvas
+const takeScreenshot = async (id: number): Promise<void> => {
+	try {
+		if (!canvas || !ctx || !drawn) throw new Error('No frame drawn yet.')
+		const { width, height } = canvas
+		// Read synchronously: no frame can land between the PNG and the RGBA.
+		const image = ctx.getImageData(0, 0, width, height)
+		const copy = new OffscreenCanvas(width, height)
+		const copyCtx = copy.getContext('2d')
+		if (!copyCtx) throw new Error('No 2D context for the screenshot.')
+		copyCtx.putImageData(image, 0, 0)
+		const blob = await copy.convertToBlob({ type: 'image/png' })
+		const png = await blob.arrayBuffer()
+		const rgba = image.data.buffer
+		post({ type: 'screenshot', id, png, rgba, width, height }, [png, rgba])
+	} catch (e) {
+		post({ type: 'screenshot', id, error: String(e) })
+	}
+}
+
+self.onmessage = (e: MessageEvent<WorkerRequest>): void => {
+	const request = e.data
+	if (request.type === 'screenshot') {
+		void takeScreenshot(request.id)
+		return
+	}
+	canvas = request.canvas
 	ctx = canvas.getContext('2d', { alpha: false, desynchronized: true })
 	const ws = connect(
-		{ port: init.port, token: init.token },
+		{ port: request.port, token: request.token },
 		'video',
-		init.sessionId,
+		request.sessionId,
 	)
 	ws.addEventListener('message', (ev: MessageEvent<unknown>) => {
 		if (ev.data instanceof ArrayBuffer) onEnvelope(ev.data)

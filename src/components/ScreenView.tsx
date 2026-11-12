@@ -15,11 +15,16 @@ import {
 	type MirrorRole,
 	onDeviceClipboard,
 	onSessionState,
+	revealFile,
 	startMirror,
 	stopMirror,
 } from '../lib/ipc'
 import { error, info } from '../lib/log'
+import { useApkDrop } from '../state/apk-drop'
+import { useNote } from '../state/note'
+import { useScreenCapture } from '../state/screen-capture'
 import type { WorkerEvent, WorkerInit } from '../video/protocol'
+import { CaptureButtons } from './CaptureButtons'
 
 const IDLE_AFTER_MS = 3000
 const RETRY_DELAYS_MS = [1000, 2000, 5000]
@@ -50,18 +55,35 @@ export const ScreenView = ({
 }: ScreenViewProps): JSX.Element => {
 	const hostRef = useRef<HTMLDivElement>(null)
 	const controlRef = useRef<ControlSocket | null>(null)
+	const workerRef = useRef<Worker | null>(null)
 	const retriesRef = useRef(0)
 	const [phase, setPhase] = useState<Phase>({ kind: 'starting' })
 	const [hasFrame, setHasFrame] = useState(false)
+	const [session, setSession] = useState<string | null>(null)
 	const [size, setSize] = useState<{ width: number; height: number } | null>(
 		null,
 	)
 	const [lag, setLag] = useState(0)
 	const [software, setSoftware] = useState(false)
 	const [idle, setIdle] = useState(false)
-	const [note, setNote] = useState<string | null>(null)
 	const [attempt, setAttempt] = useState(0)
 	const interactive = role === 'main'
+	const { note, showNote } = useNote()
+	const capture = useScreenCapture({
+		serial,
+		role,
+		sessionId: session,
+		workerRef,
+		showNote,
+	})
+	const dragging = useApkDrop({
+		serial,
+		hostRef,
+		enabled: interactive,
+		showNote,
+	})
+	const canCapture =
+		session !== null && phase.kind === 'streaming' && hasFrame
 
 	useEffect(() => {
 		const host = hostRef.current
@@ -87,6 +109,7 @@ export const ScreenView = ({
 			new URL('../video/video-worker.ts', import.meta.url),
 			{ type: 'module' },
 		)
+		workerRef.current = worker
 
 		const send = (message: ControlMessage): void => {
 			controlRef.current?.send(message)
@@ -174,6 +197,7 @@ export const ScreenView = ({
 					return
 				}
 				sessionId = started.sessionId
+				setSession(sessionId)
 				video.width = started.width
 				video.height = started.height
 				setSize({ width: started.width, height: started.height })
@@ -390,6 +414,8 @@ export const ScreenView = ({
 			if (sessionId) void stopMirror(sessionId)
 			controlRef.current?.close()
 			controlRef.current = null
+			workerRef.current = null
+			setSession(null)
 			worker.terminate()
 			canvas.remove()
 			cleanups.forEach((cleanup) => cleanup())
@@ -412,16 +438,19 @@ export const ScreenView = ({
 			meta: 0,
 		})
 	}
-	const showNote = (text: string): void => {
-		setNote(text)
-		window.setTimeout(() => setNote(null), 3000)
-	}
 	const togglePower = (): void => {
 		devicePower(serial, 'toggle')
 			.then((state) =>
 				showNote(state === 'Awake' ? 'Screen on' : 'Screen off'),
 			)
-			.catch((e: unknown) => showNote(`Power failed: ${String(e)}`))
+			.catch((e: unknown) =>
+				showNote(`Power failed: ${String(e)}`, { error: true }),
+			)
+	}
+	const reveal = (path: string): void => {
+		revealFile(path).catch((e: unknown) => {
+			void error(`reveal failed: ${String(e)}`)
+		})
 	}
 	const retry = (): void => {
 		retriesRef.current = 0
@@ -434,6 +463,18 @@ export const ScreenView = ({
 	}
 	const buttonText = (icon: string, text: string): string =>
 		compact ? icon : `${icon} ${text}`
+	const revealPath = note?.revealPath ?? null
+	const captureButtons = (
+		<CaptureButtons
+			compact={compact}
+			canCapture={canCapture}
+			shooting={capture.shooting}
+			recordingSince={capture.recordingSince}
+			recordingBusy={capture.recordingBusy}
+			onScreenshot={capture.takeScreenshot}
+			onToggleRecording={capture.toggleRecording}
+		/>
+	)
 
 	return (
 		<div
@@ -490,8 +531,8 @@ export const ScreenView = ({
 					>
 						{buttonText('⟳', 'Reset video')}
 					</button>
+					{captureButtons}
 					<span className='spacer' />
-					{note && <span className='muted'>{note}</span>}
 					<span className='muted'>
 						{compact
 							? `lag ${lag}`
@@ -502,6 +543,8 @@ export const ScreenView = ({
 			) : (
 				<div className='screen-label'>
 					<span>{label ?? 'Customer screen'}</span>
+					{captureButtons}
+					<span className='spacer' />
 					<span className='muted'>
 						{size ? `${size.width}×${size.height}` : ''} · view only
 					</span>
@@ -532,6 +575,28 @@ export const ScreenView = ({
 					!interactive && (
 						<div className='screen-overlay faint'>No content</div>
 					)}
+				{note && (
+					<div
+						className={
+							note.error ? 'screen-note err' : 'screen-note'
+						}
+					>
+						<span>{note.text}</span>
+						{revealPath !== null && (
+							<button
+								className='link'
+								onClick={() => reveal(revealPath)}
+							>
+								Show in folder
+							</button>
+						)}
+					</div>
+				)}
+				{dragging && (
+					<div className='drop-overlay'>
+						Drop to install on {serial}
+					</div>
+				)}
 			</div>
 		</div>
 	)

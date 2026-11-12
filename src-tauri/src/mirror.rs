@@ -14,6 +14,7 @@ use tokio::sync::{OnceCell, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::adb::{AdbServer, AdbStream, DeviceSel, ShellEvent, ShellProcess};
+use crate::capture::{EndReason, Ending, Msg, Offer, Recorder, RecordingEnded};
 use crate::config::ConfigStore;
 use crate::scrcpy::ScrcpyError;
 use crate::scrcpy::control::{self, Control, Input, KEYCODE_POWER, KEYCODE_SLEEP};
@@ -95,6 +96,8 @@ pub struct Session {
     last_reset: Mutex<Option<Instant>>,
     clients: AtomicUsize,
     unwatched_since: Mutex<Option<Instant>>,
+    config: Mutex<Option<Bytes>>,
+    recorder: Mutex<Option<Recorder>>,
     cancel: CancellationToken,
 }
 
@@ -138,7 +141,7 @@ impl Session {
         rx
     }
 
-    fn request_reset(&self, force: bool) {
+    pub fn request_reset(&self, force: bool) {
         {
             let mut last = lock(&self.last_reset);
             if !force && last.is_some_and(|t| t.elapsed() < RESET_EVERY) {
@@ -150,6 +153,52 @@ impl Session {
             && self.control_tx.try_send(bytes).is_err()
         {
             tracing::debug!(session = %self.id, "control queue full; reset skipped");
+        }
+    }
+
+    // Under the recorder lock, so no packet slips between the snapshot and the first feed.
+    pub fn begin_recording(
+        &self,
+        start: impl FnOnce((u16, u16), Option<Bytes>) -> Recorder,
+    ) -> bool {
+        let mut slot = lock(&self.recorder);
+        if slot.is_some() {
+            return false;
+        }
+        *slot = Some(start(self.size(), lock(&self.config).clone()));
+        true
+    }
+
+    pub fn end_recording(
+        &self,
+        reason: EndReason,
+        error: Option<String>,
+    ) -> Option<oneshot::Receiver<RecordingEnded>> {
+        let recorder = lock(&self.recorder).take()?;
+        Some(recorder.finish(reason, error))
+    }
+
+    pub fn release_recorder(&self, ending: &Arc<Ending>) {
+        let mut slot = lock(&self.recorder);
+        if slot.as_ref().is_some_and(|r| r.is(ending)) {
+            *slot = None;
+        }
+    }
+
+    fn record(&self, msg: Msg) {
+        let mut slot = lock(&self.recorder);
+        let Some(recorder) = slot.as_ref() else {
+            return;
+        };
+        match recorder.offer(msg) {
+            Offer::Taken => {}
+            Offer::Full => {
+                tracing::warn!(session = %self.id, "recording queue full; ending the recording");
+                if let Some(recorder) = slot.take() {
+                    recorder.finish(EndReason::Failed, Some("the disk can't keep up".into()));
+                }
+            }
+            Offer::Gone => *slot = None,
         }
     }
 
@@ -271,6 +320,14 @@ impl MirrorHub {
 
     pub fn session(&self, id: &str) -> Option<Arc<Session>> {
         lock(&self.sessions).get(id).cloned()
+    }
+
+    pub fn end_recordings(&self) -> Vec<oneshot::Receiver<RecordingEnded>> {
+        let sessions: Vec<Arc<Session>> = lock(&self.sessions).values().cloned().collect();
+        sessions
+            .iter()
+            .filter_map(|s| s.end_recording(EndReason::SessionEnded, None))
+            .collect()
     }
 
     fn main_session(&self, serial: &str) -> Option<Arc<Session>> {
@@ -428,6 +485,8 @@ impl MirrorHub {
             last_reset: Mutex::new(None),
             clients: AtomicUsize::new(0),
             unwatched_since: Mutex::new(Some(Instant::now())),
+            config: Mutex::new(None),
+            recorder: Mutex::new(None),
             cancel: CancellationToken::new(),
         });
         lock(&self.sessions).insert(session_id.clone(), Arc::clone(&session));
@@ -488,6 +547,7 @@ impl MirrorHub {
         shell_task.abort();
         *lock(&session.viewer) = None;
         session.cancel.cancel();
+        session.end_recording(EndReason::SessionEnded, None);
         lock(&self.sessions).remove(&session.id);
         match &outcome {
             Ok(()) => {
@@ -547,6 +607,10 @@ async fn video_loop(
                     u16::try_from(height).unwrap_or(u16::MAX),
                 );
                 *lock(&session.size) = size;
+                session.record(Msg::Session {
+                    width: size.0,
+                    height: size.1,
+                });
                 tracing::debug!(session = %session.id, width, height, "video session");
                 if let Some(tx) = first.take() {
                     let _ = tx.send((width, height));
@@ -567,11 +631,19 @@ async fn video_loop(
                     codec_logged = true;
                     tracing::info!(session = %session.id, codec = ?video::codec_string(&data), "video config");
                 }
+                *lock(&session.config) = Some(data.clone());
+                session.record(Msg::Config(data.clone()));
                 session
                     .deliver(video::envelope(video::K_CONFIG, 0, 0, &data), true, false)
                     .await;
             }
             Packet::Media { key, pts, data, .. } => {
+                session.record(Msg::Frame {
+                    key,
+                    pts,
+                    data: data.clone(),
+                    at: Instant::now(),
+                });
                 session
                     .deliver(
                         video::envelope(video::K_FRAME, u8::from(key), pts, &data),

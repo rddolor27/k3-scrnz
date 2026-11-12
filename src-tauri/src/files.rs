@@ -1,6 +1,7 @@
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize, Serializer};
 use tauri::ipc::{InvokeBody, Request};
 use tauri::{AppHandle, Manager};
@@ -126,7 +127,7 @@ impl Target {
     }
 }
 
-fn output_text(stderr: &[u8], stdout: &[u8]) -> String {
+pub(crate) fn output_text(stderr: &[u8], stdout: &[u8]) -> String {
     let text = if stderr.is_empty() { stdout } else { stderr };
     let text = String::from_utf8_lossy(text).trim().to_owned();
     if text.is_empty() {
@@ -136,7 +137,7 @@ fn output_text(stderr: &[u8], stdout: &[u8]) -> String {
     }
 }
 
-fn validate_package(package: String) -> Result<String, FilesError> {
+pub(crate) fn validate_package(package: String) -> Result<String, FilesError> {
     let valid = package.len() <= 255
         && package.contains('.')
         && !package.starts_with('.')
@@ -243,7 +244,7 @@ fn is_format_char(c: char) -> bool {
         | '\u{2066}'..='\u{2069}')
 }
 
-fn local_name(name: &str) -> String {
+pub(crate) fn local_name(name: &str) -> String {
     let mut clean: String = name
         .chars()
         .map(|c| {
@@ -278,7 +279,7 @@ fn local_name(name: &str) -> String {
     clean
 }
 
-fn downloads_root(app: &AppHandle) -> Result<PathBuf, FilesError> {
+pub(crate) fn downloads_root(app: &AppHandle) -> Result<PathBuf, FilesError> {
     let dir = app
         .path()
         .download_dir()
@@ -286,7 +287,7 @@ fn downloads_root(app: &AppHandle) -> Result<PathBuf, FilesError> {
     Ok(dir.join("k3-scrnz"))
 }
 
-async fn reserve_unique(dir: &Path, name: &str) -> Result<PathBuf, FilesError> {
+pub(crate) async fn reserve_unique(dir: &Path, name: &str) -> Result<PathBuf, FilesError> {
     let (stem, ext) = match name.rsplit_once('.') {
         Some((stem, ext)) if !stem.is_empty() => (stem, format!(".{ext}")),
         _ => (name, String::new()),
@@ -546,6 +547,11 @@ pub async fn upload_bytes(request: Request<'_>) -> Result<String, FilesError> {
     check_upload_size(bytes.len() as u64, &meta.name)?;
     let target = Target::new(meta.serial, meta.run_as)?;
     upload(&target, &meta.dir, &meta.name, bytes).await
+}
+
+pub(crate) fn json_header<T: DeserializeOwned>(request: &Request<'_>, name: &str) -> Option<T> {
+    let value = request.headers().get(name)?.to_str().ok()?;
+    serde_json::from_slice(&hex_decode(value)?).ok()
 }
 
 fn hex_decode(text: &str) -> Option<Vec<u8>> {

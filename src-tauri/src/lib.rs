@@ -1,4 +1,6 @@
 pub mod adb;
+mod apps;
+mod capture;
 mod config;
 mod devices;
 mod displays;
@@ -11,12 +13,15 @@ mod stats;
 mod ws;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use tauri::Manager;
 use tauri::path::BaseDirectory;
 use tauri::plugin::TauriPlugin;
 use tauri_plugin_log::log::LevelFilter;
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
+
+const RECORDING_FINISH: Duration = Duration::from_secs(5);
 
 fn log_plugin<R: tauri::Runtime>() -> TauriPlugin<R> {
     let level = if cfg!(debug_assertions) {
@@ -99,6 +104,12 @@ pub fn run() {
             files::delete_path,
             files::reveal_file,
             files::list_packages,
+            capture::save_screenshot,
+            capture::start_recording,
+            capture::stop_recording,
+            apps::install_apk_path,
+            apps::install_apk_bytes,
+            apps::app_action,
             logcat::start_logcat,
             logcat::set_logcat_filter,
             logcat::clear_logcat,
@@ -111,9 +122,22 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            if let tauri::RunEvent::Exit = event
-                && let Some(emulators) = app.try_state::<emulator::EmulatorState>()
-            {
+            if !matches!(event, tauri::RunEvent::Exit) {
+                return;
+            }
+            if let Some(hub) = app.try_state::<Arc<mirror::MirrorHub>>() {
+                let pending = hub.end_recordings();
+                if !pending.is_empty() {
+                    // Without its moov box a recording doesn't play.
+                    tauri::async_runtime::block_on(async {
+                        let all = futures_util::future::join_all(pending);
+                        if tokio::time::timeout(RECORDING_FINISH, all).await.is_err() {
+                            tracing::warn!("recordings did not finish before exit");
+                        }
+                    });
+                }
+            }
+            if let Some(emulators) = app.try_state::<emulator::EmulatorState>() {
                 emulator::shutdown(&emulators);
             }
         });

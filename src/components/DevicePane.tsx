@@ -3,6 +3,7 @@ import { type JSX, useEffect, useRef, useState } from 'react'
 import { stateHint, stateTone } from '../lib/device-state'
 import { type DeviceView, isEmulator, stopEmulator } from '../lib/ipc'
 import { warn } from '../lib/log'
+import { AppMenu } from './AppMenu'
 import { CustomerScreens, useCustomerDisplays } from './CustomerScreens'
 import { FileExplorer } from './FileExplorer'
 import { LogcatPanel } from './LogcatPanel'
@@ -70,6 +71,7 @@ export const DevicePane = ({ device }: DevicePaneProps): JSX.Element => {
 				{isEmulator(device.serial) && online && (
 					<StopEmulator serial={device.serial} />
 				)}
+				{online && <AppMenu serial={device.serial} />}
 				<div className='views' role='tablist'>
 					{(['screen', 'files', 'info'] as const).map((v) => (
 						<button

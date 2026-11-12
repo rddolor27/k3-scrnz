@@ -426,6 +426,90 @@ input {
 	border-color: var(--bad);
 }
 
+.app-menu {
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 12px;
+}
+
+.app-menu > button {
+	padding: 2px 10px;
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	background: var(--panel-raised);
+}
+
+.app-menu > button:hover:not(:disabled) {
+	border-color: var(--accent);
+}
+
+.app-menu > button:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
+.app-menu > span {
+	overflow: hidden;
+	max-width: 320px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.app-popover {
+	position: absolute;
+	z-index: 10;
+	top: calc(100% + 4px);
+	left: 0;
+	display: grid;
+	gap: 2px;
+	width: 260px;
+	padding: 6px;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: var(--panel-raised);
+	box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
+	font-size: 13px;
+}
+
+.app-package {
+	overflow: hidden;
+	padding: 2px 8px 6px;
+	color: var(--muted);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.app-popover button {
+	padding: 5px 8px;
+	border: 0;
+	border-radius: 5px;
+	background: none;
+	overflow-wrap: anywhere;
+	text-align: left;
+}
+
+.app-popover button:hover:not(:disabled) {
+	background: var(--panel);
+}
+
+.app-popover button:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
+.app-popover button.danger {
+	color: var(--bad);
+}
+
+.app-popover hr {
+	width: 100%;
+	margin: 3px 0;
+	border: 0;
+	border-top: 1px solid var(--border);
+}
+
 .screen-toolbar,
 .screen-label {
 	display: flex;
@@ -441,6 +525,7 @@ input {
 }
 
 .screen-toolbar button,
+.screen-label button,
 .screen-overlay button,
 .customer-toggle {
 	padding: 3px 10px;
@@ -449,10 +534,26 @@ input {
 	background: var(--panel-raised);
 }
 
-.screen-toolbar button:hover,
+.screen-toolbar button:hover:not(:disabled),
+.screen-label button:hover:not(:disabled),
 .screen-overlay button:hover,
 .customer-toggle:hover {
 	border-color: var(--accent);
+}
+
+.screen-toolbar button:disabled,
+.screen-label button:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
+.screen-toolbar button.recording,
+.screen-toolbar button.recording:hover:not(:disabled),
+.screen-label button.recording,
+.screen-label button.recording:hover:not(:disabled) {
+	border-color: var(--bad);
+	color: var(--bad);
+	font-variant-numeric: tabular-nums;
 }
 
 .screen-host {
@@ -499,6 +600,43 @@ input {
 .screen-overlay.faint {
 	background: rgb(0 0 0 / 35%);
 	pointer-events: none;
+}
+
+.screen-note {
+	position: absolute;
+	z-index: 2;
+	right: 8px;
+	bottom: 8px;
+	left: 8px;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 10px;
+	padding: 6px 10px;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: rgb(25 28 33 / 92%);
+	font-size: 13px;
+	overflow-wrap: anywhere;
+}
+
+.screen-note.err {
+	border-color: var(--bad);
+}
+
+.screen-note button.link {
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--accent);
+	text-decoration: underline;
+}
+
+.screen-host .drop-overlay {
+	z-index: 3;
+	padding: 12px;
+	font-size: 14px;
+	text-align: center;
 }
 
 .customer-panel {

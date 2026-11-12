@@ -6,6 +6,21 @@ export interface WorkerInit {
 	sessionId: string
 }
 
+export interface WorkerScreenshotRequest {
+	type: 'screenshot'
+	id: number
+}
+
+export type WorkerRequest = WorkerInit | WorkerScreenshotRequest
+
+export interface ScreenshotFrame {
+	png: ArrayBuffer
+	// width * height * 4 bytes, the same frame as the PNG.
+	rgba: ArrayBuffer
+	width: number
+	height: number
+}
+
 export type WorkerEvent =
 	// Latest session packet size: the server drops touches with another w,h.
 	| { type: 'size'; width: number; height: number }
@@ -16,3 +31,5 @@ export type WorkerEvent =
 	| { type: 'closed' }
 	| { type: 'decoder-error'; message: string }
 	| { type: 'failed'; message: string }
+	| ({ type: 'screenshot'; id: number } & ScreenshotFrame)
+	| { type: 'screenshot'; id: number; error: string }

@@ -165,6 +165,29 @@ export const revealFile = (path: string): Promise<void> =>
 export const listPackages = (serial: string): Promise<string[]> =>
 	invoke<string[]>('list_packages', { serial })
 
+export type AppAction = 'restart' | 'forceStop' | 'clearData'
+
+export const installApkPath = (
+	serial: string,
+	localPath: string,
+): Promise<string> => invoke<string>('install_apk_path', { serial, localPath })
+
+export const installApkBytes = (
+	serial: string,
+	name: string,
+	bytes: Uint8Array,
+): Promise<string> =>
+	invoke<string>('install_apk_bytes', bytes, {
+		headers: { 'x-k3-install': toHex(JSON.stringify({ serial, name })) },
+	})
+
+export const appAction = (
+	serial: string,
+	appPackage: string,
+	action: AppAction,
+): Promise<string> =>
+	invoke<string>('app_action', { serial, package: appPackage, action })
+
 export type MirrorRole = 'main' | 'customer'
 
 export interface MirrorStarted {
@@ -213,6 +236,58 @@ export const onDeviceClipboard = (
 	listen<{ serial: string; text: string }>('device-clipboard', (event) =>
 		handler(event.payload),
 	)
+
+export interface ScreenshotCapture {
+	serial: string
+	name: string
+	width: number
+	height: number
+	pngLength: number
+}
+
+export interface ScreenshotSaved {
+	path: string
+	copied: boolean
+	copyError: string | null
+}
+
+// Body: the PNG bytes immediately followed by width * height * 4 RGBA bytes.
+export const saveScreenshot = (
+	capture: ScreenshotCapture,
+	body: Uint8Array,
+): Promise<ScreenshotSaved> =>
+	invoke<ScreenshotSaved>('save_screenshot', body, {
+		headers: { 'x-k3-capture': toHex(JSON.stringify(capture)) },
+	})
+
+export type RecordingEndReason =
+	| 'stopped'
+	| 'sessionEnded'
+	| 'sizeChanged'
+	| 'limit'
+	| 'failed'
+
+export interface RecordingEnded {
+	sessionId: string
+	path: string
+	durationMs: number
+	bytes: number
+	reason: RecordingEndReason
+	error: string | null
+}
+
+export const startRecording = (
+	sessionId: string,
+	name: string,
+): Promise<string> => invoke<string>('start_recording', { sessionId, name })
+
+export const stopRecording = (sessionId: string): Promise<RecordingEnded> =>
+	invoke<RecordingEnded>('stop_recording', { sessionId })
+
+export const onRecordingEnded = (
+	handler: (ended: RecordingEnded) => void,
+): Promise<UnlistenFn> =>
+	listen<RecordingEnded>('recording-ended', (event) => handler(event.payload))
 
 export interface DisplayInfo {
 	id: number
