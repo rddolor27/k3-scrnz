@@ -634,3 +634,7 @@ code {
 .err {
 	color: var(--bad);
 }
+
+.warn {
+	color: var(--wait);
+}

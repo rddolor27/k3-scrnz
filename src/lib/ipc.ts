@@ -52,6 +52,18 @@ export const listDevices = (): Promise<DeviceView[]> =>
 export const getAdbStatus = (): Promise<AdbStatus> =>
 	invoke<AdbStatus>('get_adb_status')
 
+/** src-tauri/src/stats.rs `AppStats`: the app process and its WebView2 children. */
+export interface AppStats {
+	/** Share of the whole machine, 0–100. */
+	cpuPercent: number
+	/** Summed working sets (an upper bound: WebView2 processes share pages). */
+	memoryBytes: number
+	processes: number
+}
+
+export const getAppStats = (): Promise<AppStats> =>
+	invoke<AppStats>('get_app_stats')
+
 /** Saves a friendly name; an empty name clears it. */
 export const setDeviceName = (serial: string, name: string): Promise<void> =>
 	invoke<void>('set_device_name', { serial, name })

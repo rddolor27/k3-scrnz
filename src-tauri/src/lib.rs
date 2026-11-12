@@ -6,6 +6,7 @@ mod files;
 mod logcat;
 mod mirror;
 mod scrcpy;
+mod stats;
 mod ws;
 
 use std::sync::Arc;
@@ -78,6 +79,7 @@ pub fn run() {
                 Arc::clone(&config),
                 Arc::clone(&hub),
             ));
+            app.manage(stats::StatsState::new());
             app.manage(Arc::clone(&config));
             app.manage(hub);
             Ok(())
@@ -104,6 +106,7 @@ pub fn run() {
             logcat::set_logcat_filter,
             logcat::clear_logcat,
             logcat::get_logcat_info,
+            stats::get_app_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

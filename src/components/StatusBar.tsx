@@ -1,7 +1,11 @@
 import type { JSX } from 'react'
 
-import type { AdbStatus } from '../lib/ipc'
+import type { AdbStatus, AppStats } from '../lib/ipc'
+import { useAppStats } from '../state/app-stats'
 import type { LoopbackState } from '../state/transport'
+
+/** SPEC section 14 M5 target: under 300 MB with 3 devices. */
+const RAM_TARGET_BYTES = 300 * 1024 * 1024
 
 interface StatusBarProps {
 	adb: AdbStatus
@@ -9,20 +13,43 @@ interface StatusBarProps {
 	loopback: LoopbackState
 }
 
-/** adb server, device count and transport check (spec section 11). */
+/** adb server, device count, transport check and app CPU/RAM (spec section 11). */
 export const StatusBar = ({
 	adb,
 	onlineCount,
 	loopback,
-}: StatusBarProps): JSX.Element => (
-	<footer className='statusbar'>
-		<AdbText adb={adb} />
-		<span>
-			{onlineCount} {onlineCount === 1 ? 'device' : 'devices'} online
+}: StatusBarProps): JSX.Element => {
+	const stats = useAppStats()
+	return (
+		<footer className='statusbar'>
+			<AdbText adb={adb} />
+			<span>
+				{onlineCount} {onlineCount === 1 ? 'device' : 'devices'} online
+			</span>
+			<LoopbackText state={loopback} />
+			<span className='spacer' />
+			{stats && <StatsText stats={stats} />}
+		</footer>
+	)
+}
+
+interface StatsTextProps {
+	stats: AppStats
+}
+
+const StatsText = ({ stats }: StatsTextProps): JSX.Element => {
+	const mb = Math.round(stats.memoryBytes / (1024 * 1024))
+	return (
+		<span
+			className={
+				stats.memoryBytes > RAM_TARGET_BYTES ? 'warn' : undefined
+			}
+			title={`k3.scrnz and ${stats.processes - 1} WebView2 processes; RAM is the summed working set`}
+		>
+			CPU {stats.cpuPercent.toFixed(1)}% · RAM {mb} MB
 		</span>
-		<LoopbackText state={loopback} />
-	</footer>
-)
+	)
+}
 
 interface AdbTextProps {
 	adb: AdbStatus
