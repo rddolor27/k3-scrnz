@@ -29,6 +29,7 @@ const DEBOUNCE_MS = 250
 /** How far from the end still counts as "at the bottom". */
 const FOLLOW_SLACK_PX = 8
 const NEWLINES = /\r?\n/g
+const TRAILING_NEWLINES = /[\r\n]+$/
 
 /** What the filter bar shows; `toFilter` turns it into what Rust receives. */
 interface FilterDraft {
@@ -68,9 +69,14 @@ const shortError = (text: string): string => {
 	return cause?.slice('error:'.length).trim() ?? lines.join(' ')
 }
 
-/** A multi-line message shows on one row; the details strip has all of it. */
-const oneLine = (msg: string): string =>
-	msg.includes('\n') ? msg.replace(NEWLINES, ' â†µ ') : msg
+/**
+ * A multi-line message shows on one row; the details strip has all of it.
+ * Trailing newlines are dropped, as `logcat` itself does.
+ */
+const oneLine = (msg: string): string => {
+	const text = msg.replace(TRAILING_NEWLINES, '')
+	return text.includes('\n') ? text.replace(NEWLINES, ' ↵ ') : text
+}
 
 interface LogcatPanelProps {
 	serial: string
