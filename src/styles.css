@@ -257,6 +257,10 @@ input {
 	min-height: 0;
 }
 
+.device-layout[hidden] {
+	display: none;
+}
+
 .screens {
 	display: flex;
 	gap: 10px;

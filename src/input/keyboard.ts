@@ -29,7 +29,8 @@ export const mapKey = (
 	action: 0 | 1,
 	repeat: number,
 ): KeyAction => {
-	if (e.isComposing) return { kind: 'ignore' }
+	// An IME's composing keydowns report keyCode 229; never forward them.
+	if (e.isComposing || e.keyCode === 229) return { kind: 'ignore' }
 	if (action === 0 && e.ctrlKey && !e.altKey && e.code === 'KeyV') {
 		return { kind: 'paste' }
 	}

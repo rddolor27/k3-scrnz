@@ -1,4 +1,4 @@
-import { type JSX, useRef, useState } from 'react'
+import { type JSX, useEffect, useRef, useState } from 'react'
 
 import { stateHint, stateTone } from '../lib/device-state'
 import type { DeviceView } from '../lib/ipc'
@@ -12,6 +12,7 @@ type View = 'screen' | 'files' | 'info'
 const LOG_HEIGHT_KEY = 'k3.logHeight'
 const CUSTOMER_KEY = 'k3.customerPanel'
 const MIN_LOG = 120
+const KEEP_SCREEN_MS = 15_000
 
 const readNumber = (key: string, fallback: number): number => {
 	try {
@@ -37,9 +38,26 @@ interface DevicePaneProps {
 /** The selected device: screen + customer screen + logcat, files, or info. */
 export const DevicePane = ({ device }: DevicePaneProps): JSX.Element => {
 	const [view, setView] = useState<View>('screen')
+	// The screen stays mounted (hidden) for a while after switching to Files
+	// or Info, so switching back doesn't restart the mirror (spec 8.3).
+	const [keepScreen, setKeepScreen] = useState(true)
 	const tone = stateTone(device)
 	const hint = stateHint(device)
 	const online = device.state === 'device' && !device.gone
+
+	useEffect(() => {
+		if (view === 'screen' || !keepScreen) return
+		const timer = window.setTimeout(
+			() => setKeepScreen(false),
+			KEEP_SCREEN_MS,
+		)
+		return (): void => window.clearTimeout(timer)
+	}, [view, keepScreen])
+
+	const show = (v: View): void => {
+		setView(v)
+		if (v === 'screen') setKeepScreen(true)
+	}
 
 	return (
 		<section className='pane pane-wide'>
@@ -55,7 +73,7 @@ export const DevicePane = ({ device }: DevicePaneProps): JSX.Element => {
 							key={v}
 							role='tab'
 							aria-selected={view === v}
-							onClick={() => setView(v)}
+							onClick={() => show(v)}
 						>
 							{v === 'screen'
 								? 'Screen'
@@ -67,14 +85,17 @@ export const DevicePane = ({ device }: DevicePaneProps): JSX.Element => {
 				</div>
 			</header>
 			{hint && <p className={`hint ${tone}`}>{hint}</p>}
-			{view === 'screen' &&
-				(online ? (
-					<ScreenLayout serial={device.serial} />
-				) : (
-					<p className='muted'>
-						The mirror starts when the device is connected.
-					</p>
-				))}
+			{online && (view === 'screen' || keepScreen) && (
+				<ScreenLayout
+					serial={device.serial}
+					hidden={view !== 'screen'}
+				/>
+			)}
+			{view === 'screen' && !online && (
+				<p className='muted'>
+					The mirror starts when the device is connected.
+				</p>
+			)}
 			{view === 'files' &&
 				(online ? (
 					<FileExplorer serial={device.serial} />
@@ -90,10 +111,11 @@ export const DevicePane = ({ device }: DevicePaneProps): JSX.Element => {
 
 interface ScreenLayoutProps {
 	serial: string
+	hidden: boolean
 }
 
 /** Main screen and customer panel on top, logcat below a draggable splitter. */
-const ScreenLayout = ({ serial }: ScreenLayoutProps): JSX.Element => {
+const ScreenLayout = ({ serial, hidden }: ScreenLayoutProps): JSX.Element => {
 	const customers = useCustomerDisplays(serial)
 	const [logHeight, setLogHeight] = useState(() =>
 		readNumber(LOG_HEIGHT_KEY, 260),
@@ -123,10 +145,12 @@ const ScreenLayout = ({ serial }: ScreenLayoutProps): JSX.Element => {
 		const onUp = (): void => {
 			window.removeEventListener('pointermove', onMove)
 			window.removeEventListener('pointerup', onUp)
+			window.removeEventListener('pointercancel', onUp)
 			save(LOG_HEIGHT_KEY, String(height))
 		}
 		window.addEventListener('pointermove', onMove)
 		window.addEventListener('pointerup', onUp)
+		window.addEventListener('pointercancel', onUp)
 	}
 
 	const toggleCustomer = (): void => {
@@ -139,6 +163,7 @@ const ScreenLayout = ({ serial }: ScreenLayoutProps): JSX.Element => {
 	return (
 		<div
 			className='device-layout'
+			hidden={hidden}
 			ref={layoutRef}
 			style={{
 				gridTemplateRows: `minmax(160px, 1fr) 6px ${logHeight}px`,

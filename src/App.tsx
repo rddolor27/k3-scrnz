@@ -127,7 +127,10 @@ export const App = (): JSX.Element => {
 	}
 
 	const mounted = devices.filter(
-		(d) => !paused && (d.serial === currentSerial || d.serial in hiddenAt),
+		(d) =>
+			!paused &&
+			(d.serial === currentSerial ||
+				Object.prototype.hasOwnProperty.call(hiddenAt, d.serial)),
 	)
 
 	return (

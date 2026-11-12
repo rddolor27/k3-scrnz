@@ -18,16 +18,18 @@ import {
 	startMirror,
 	stopMirror,
 } from '../lib/ipc'
-import { error } from '../lib/log'
+import { error, info } from '../lib/log'
 import type { WorkerEvent, WorkerInit } from '../video/protocol'
 
 /** A customer screen with no frame for this long shows "No content". */
 const IDLE_AFTER_MS = 3000
+/** Automatic restarts after a failure while the device stays connected. */
+const RETRY_DELAYS_MS = [1000, 2000, 5000]
 
 type Phase =
 	| { kind: 'starting' }
 	| { kind: 'streaming' }
-	| { kind: 'error'; message: string }
+	| { kind: 'error'; message: string; retrying: boolean }
 
 interface ScreenViewProps {
 	serial: string
@@ -49,11 +51,14 @@ export const ScreenView = ({
 }: ScreenViewProps): JSX.Element => {
 	const hostRef = useRef<HTMLDivElement>(null)
 	const controlRef = useRef<ControlSocket | null>(null)
+	const retriesRef = useRef(0)
 	const [phase, setPhase] = useState<Phase>({ kind: 'starting' })
+	const [hasFrame, setHasFrame] = useState(false)
 	const [size, setSize] = useState<{ width: number; height: number } | null>(
 		null,
 	)
 	const [lag, setLag] = useState(0)
+	const [software, setSoftware] = useState(false)
 	const [idle, setIdle] = useState(false)
 	const [note, setNote] = useState<string | null>(null)
 	const [attempt, setAttempt] = useState(0)
@@ -66,7 +71,10 @@ export const ScreenView = ({
 		let sessionId: string | null = null
 		let lastSentClip: string | null = null
 		let lastFrameAt = 0
+		let framed = false
 		let idleNow = false
+		let failed = false
+		let retryTimer = 0
 		const video = { width: 0, height: 0 }
 		const cleanups: (() => void)[] = []
 
@@ -85,6 +93,26 @@ export const ScreenView = ({
 			controlRef.current?.send(message)
 		}
 
+		/** Shows the error and restarts the session after a backoff, a few times. */
+		const fail = (message: string): void => {
+			// One failure per mount: a dying session reports both its state
+			// event and the closed socket.
+			if (!live || failed) return
+			failed = true
+			const delay = RETRY_DELAYS_MS[retriesRef.current]
+			setPhase({ kind: 'error', message, retrying: delay !== undefined })
+			if (delay === undefined) return
+			retriesRef.current += 1
+			window.clearTimeout(retryTimer)
+			retryTimer = window.setTimeout(() => {
+				if (!live) return
+				setPhase({ kind: 'starting' })
+				setHasFrame(false)
+				setAttempt((n) => n + 1)
+			}, delay)
+		}
+		cleanups.push(() => window.clearTimeout(retryTimer))
+
 		worker.onmessage = (e: MessageEvent<WorkerEvent>): void => {
 			const event = e.data
 			if (event.type === 'size') {
@@ -95,15 +123,30 @@ export const ScreenView = ({
 				send({ t: 'resetVideo' })
 			} else if (event.type === 'stats') {
 				setLag(event.lag)
+				setSoftware(event.software)
+			} else if (event.type === 'notice') {
+				void info(`video ${serial}/${displayId}: ${event.message}`)
 			} else if (event.type === 'frame') {
 				lastFrameAt = performance.now()
+				if (!framed) {
+					framed = true
+					retriesRef.current = 0
+					setHasFrame(true)
+				}
 				if (idleNow) {
 					idleNow = false
 					setIdle(false)
 				}
 			} else if (event.type === 'decoder-error') {
 				void error(`video decoder (${serial}): ${event.message}`)
+			} else if (event.type === 'failed') {
+				fail(event.message)
+			} else if (event.type === 'closed') {
+				fail('The video connection closed.')
 			}
+		}
+		worker.onerror = (e: ErrorEvent): void => {
+			void error(`video worker (${serial}): ${e.message}`)
 		}
 
 		const idleTimer = window.setInterval(() => {
@@ -120,6 +163,9 @@ export const ScreenView = ({
 		const start = async (): Promise<void> => {
 			try {
 				const ep = await getEndpoint()
+				// A mount cancelled meanwhile (StrictMode, fast tab switch) must
+				// not start a server: two main servers could both press POWER.
+				if (!live) return
 				const started = await startMirror(serial, displayId, role)
 				if (!live) {
 					void stopMirror(started.sessionId)
@@ -140,10 +186,10 @@ export const ScreenView = ({
 				controlRef.current = openControl(ep, sessionId)
 				setPhase({ kind: 'streaming' })
 			} catch (e) {
-				if (live) setPhase({ kind: 'error', message: String(e) })
 				void error(
 					`mirror ${serial}/${displayId} failed to start: ${String(e)}`,
 				)
+				fail(String(e))
 			}
 		}
 		void start()
@@ -151,10 +197,7 @@ export const ScreenView = ({
 		onSessionState((state) => {
 			if (!live || state.sessionId !== sessionId) return
 			if (state.state === 'error' || state.state === 'stopped') {
-				setPhase({
-					kind: 'error',
-					message: state.error ?? 'The mirror stopped.',
-				})
+				fail(state.error ?? 'The mirror stopped.')
 			}
 		})
 			.then((unlisten) => (live ? cleanups.push(unlisten) : unlisten()))
@@ -162,17 +205,22 @@ export const ScreenView = ({
 
 		if (interactive) {
 			const pressed = new Set<number>()
-			let pendingMove: ControlMessage | null = null
+			const pendingMoves = new Map<number, ControlMessage>()
+			const downKeys = new Map<string, number>()
+			let special: number | null = null
 			let frame = 0
 			let repeat = 0
-			const flushMove = (): void => {
+			const flushMoves = (): void => {
 				frame = 0
-				if (pendingMove) send(pendingMove)
-				pendingMove = null
+				for (const move of pendingMoves.values()) send(move)
+				pendingMoves.clear()
 			}
-			const queueMove = (message: ControlMessage): void => {
-				pendingMove = message
-				if (!frame) frame = requestAnimationFrame(flushMove)
+			const queueMove = (
+				pointerId: number,
+				message: ControlMessage,
+			): void => {
+				pendingMoves.set(pointerId, message)
+				if (!frame) frame = requestAnimationFrame(flushMoves)
 			}
 			const touch = (
 				e: PointerEvent,
@@ -201,25 +249,39 @@ export const ScreenView = ({
 			}
 			const key = (keycode: number, action: 0 | 1): void =>
 				send({ t: 'key', action, keycode, repeat: 0, meta: 0 })
+			/** scrcpy's mouse bindings: right = BACK/screen on, middle = HOME, back = recents. */
+			const specialDown = (button: number): void => {
+				special = button
+				if (button === 2) send({ t: 'backOrScreenOn', action: 0 })
+				else if (button === 1) key(KEY.HOME, 0)
+				else if (button === 3) key(KEY.APP_SWITCH, 0)
+			}
+			const specialUp = (): void => {
+				if (special === 2) send({ t: 'backOrScreenOn', action: 1 })
+				else if (special === 1) key(KEY.HOME, 1)
+				else if (special === 3) key(KEY.APP_SWITCH, 1)
+				special = null
+			}
 
 			const onPointerDown = (e: PointerEvent): void => {
 				canvas.focus()
 				e.preventDefault()
+				// Capture for every button so its release arrives even off-canvas.
+				canvas.setPointerCapture(e.pointerId)
 				if (e.button === 0) {
-					canvas.setPointerCapture(e.pointerId)
-					flushMove()
+					flushMoves()
 					pressed.add(e.pointerId)
 					sendIf(touch(e, 0, 1, 1, 1))
-				} else if (e.button === 2)
-					send({ t: 'backOrScreenOn', action: 0 })
-				else if (e.button === 1) key(KEY.HOME, 0)
-				else if (e.button === 3) key(KEY.APP_SWITCH, 0)
-				else if (e.button === 4) send({ t: 'expandNotifications' })
+				} else if (e.button === 4) {
+					send({ t: 'expandNotifications' })
+				} else if (special === null) {
+					specialDown(e.button)
+				}
 			}
 			const onPointerMove = (e: PointerEvent): void => {
 				if (pressed.has(e.pointerId)) {
 					const move = touch(e, 2, 1, 0, 1)
-					if (move) queueMove(move)
+					if (move) queueMove(e.pointerId, move)
 				} else if (e.pointerType === 'mouse' && video.width) {
 					const { inside } = toDevice(
 						e,
@@ -228,29 +290,29 @@ export const ScreenView = ({
 						video.height,
 					)
 					const hover = inside ? touch(e, 7, 0, 0, 0) : null
-					if (hover) queueMove(hover)
+					if (hover) queueMove(e.pointerId, hover)
 				}
 			}
+			// pointerup fires once, for the last released button: release
+			// everything this pointer still holds, whatever `e.button` says.
 			const onPointerUp = (e: PointerEvent): void => {
-				if (e.button === 0 && pressed.has(e.pointerId)) {
-					flushMove()
+				if (pressed.has(e.pointerId)) {
+					flushMoves()
 					pressed.delete(e.pointerId)
 					sendIf(touch(e, 1, 0, 1, 0))
-				} else if (e.button === 2)
-					send({ t: 'backOrScreenOn', action: 1 })
-				else if (e.button === 1) key(KEY.HOME, 1)
-				else if (e.button === 3) key(KEY.APP_SWITCH, 1)
-			}
-			const onPointerCancel = (e: PointerEvent): void => {
-				if (!pressed.has(e.pointerId)) return
-				flushMove()
-				pressed.delete(e.pointerId)
-				sendIf(touch(e, 1, 0, 1, 0))
+				}
+				if (special !== null && e.pointerType === 'mouse') specialUp()
 			}
 			const onWheel = (e: WheelEvent): void => {
 				e.preventDefault()
 				if (!video.width) return
-				const { x, y } = toDevice(e, canvas, video.width, video.height)
+				const { x, y, inside } = toDevice(
+					e,
+					canvas,
+					video.width,
+					video.height,
+				)
+				if (!inside) return
 				send({
 					t: 'scroll',
 					x,
@@ -266,33 +328,45 @@ export const ScreenView = ({
 				const mapped = mapKey(e, action, repeat)
 				if (mapped.kind === 'ignore') return
 				e.preventDefault()
-				if (mapped.kind === 'send') {
-					send(mapped.message)
+				if (mapped.kind === 'paste') {
+					readText()
+						.then((text) => {
+							if (!text) return
+							lastSentClip = text
+							send({ t: 'setClipboard', text, paste: true })
+						})
+						.catch((err: unknown) => {
+							void error(
+								`reading the PC clipboard failed: ${String(err)}`,
+							)
+						})
 					return
 				}
-				readText()
-					.then((text) => {
-						if (!text) return
-						lastSentClip = text
-						send({ t: 'setClipboard', text, paste: true })
-					})
-					.catch((err: unknown) => {
-						void error(
-							`reading the PC clipboard failed: ${String(err)}`,
-						)
-					})
+				const { message } = mapped
+				if (message.t === 'key') {
+					// Only release keys this canvas pressed (not app shortcuts or Ctrl+V).
+					if (action === 0) downKeys.set(e.code, message.keycode)
+					else if (!downKeys.delete(e.code)) return
+				}
+				send(message)
 			}
 			const onKeyDown = (e: KeyboardEvent): void => onKey(e, 0)
 			const onKeyUp = (e: KeyboardEvent): void => onKey(e, 1)
+			// Keys still held when focus leaves would stay down on the device.
+			const onBlur = (): void => {
+				for (const keycode of downKeys.values()) key(keycode, 1)
+				downKeys.clear()
+			}
 			const onContextMenu = (e: Event): void => e.preventDefault()
 
 			canvas.addEventListener('pointerdown', onPointerDown)
 			canvas.addEventListener('pointermove', onPointerMove)
 			canvas.addEventListener('pointerup', onPointerUp)
-			canvas.addEventListener('pointercancel', onPointerCancel)
+			canvas.addEventListener('pointercancel', onPointerUp)
 			canvas.addEventListener('wheel', onWheel, { passive: false })
 			canvas.addEventListener('keydown', onKeyDown)
 			canvas.addEventListener('keyup', onKeyUp)
+			canvas.addEventListener('blur', onBlur)
 			canvas.addEventListener('contextmenu', onContextMenu)
 			cleanups.push(() => {
 				if (frame) cancelAnimationFrame(frame)
@@ -340,15 +414,21 @@ export const ScreenView = ({
 			meta: 0,
 		})
 	}
+	const showNote = (text: string): void => {
+		setNote(text)
+		window.setTimeout(() => setNote(null), 3000)
+	}
 	const togglePower = (): void => {
 		devicePower(serial, 'toggle')
 			.then((state) =>
-				setNote(state === 'Awake' ? 'Screen on' : 'Screen off'),
+				showNote(state === 'Awake' ? 'Screen on' : 'Screen off'),
 			)
-			.catch((e: unknown) => setNote(`Power failed: ${String(e)}`))
+			.catch((e: unknown) => showNote(`Power failed: ${String(e)}`))
 	}
 	const retry = (): void => {
+		retriesRef.current = 0
 		setPhase({ kind: 'starting' })
+		setHasFrame(false)
 		setAttempt((n) => n + 1)
 	}
 
@@ -398,7 +478,10 @@ export const ScreenView = ({
 					</button>
 					<button
 						onClick={() =>
-							controlRef.current?.send({ t: 'resetVideo' })
+							controlRef.current?.send({
+								t: 'resetVideo',
+								force: true,
+							})
 						}
 						title='Ask for a fresh key frame'
 					>
@@ -409,6 +492,7 @@ export const ScreenView = ({
 					<span className='muted'>
 						{size ? `${size.width}×${size.height}` : '…'} · lag{' '}
 						{lag}
+						{software && ' · sw'}
 					</span>
 				</div>
 			) : (
@@ -423,15 +507,27 @@ export const ScreenView = ({
 				{phase.kind === 'starting' && (
 					<div className='screen-overlay'>Starting mirror…</div>
 				)}
+				{phase.kind === 'streaming' && !hasFrame && (
+					<div className='screen-overlay faint'>
+						Waiting for video…
+					</div>
+				)}
 				{phase.kind === 'error' && (
 					<div className='screen-overlay err'>
 						<span>{phase.message}</span>
-						<button onClick={retry}>Retry</button>
+						{phase.retrying ? (
+							<span className='muted'>Retrying…</span>
+						) : (
+							<button onClick={retry}>Retry</button>
+						)}
 					</div>
 				)}
-				{phase.kind === 'streaming' && idle && !interactive && (
-					<div className='screen-overlay faint'>No content</div>
-				)}
+				{phase.kind === 'streaming' &&
+					hasFrame &&
+					idle &&
+					!interactive && (
+						<div className='screen-overlay faint'>No content</div>
+					)}
 			</div>
 		</div>
 	)
