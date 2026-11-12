@@ -27,10 +27,12 @@ serde_json = "1.0.154"
 # Pinned to 2.12.x (spec section 2). Must stay on the same minor as @tauri-apps/api and @tauri-apps/cli.
 tauri = { version = "~2.12", features = [] }
 tauri-plugin-clipboard-manager = "2"
+tauri-plugin-log = "2"
 thiserror = "2.0.21"
 tokio = { version = "1.54", features = ["net", "io-util", "process", "sync", "time", "macros", "rt-multi-thread"] }
 tokio-tungstenite = "0.30"
 tokio-util = "0.7"
+tracing = { version = "0.1.44", features = ["log"] }
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

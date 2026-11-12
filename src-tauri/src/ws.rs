@@ -52,7 +52,10 @@ pub fn start() -> std::io::Result<Endpoint> {
     tauri::async_runtime::spawn(async move {
         let listener = match TcpListener::from_std(std_listener) {
             Ok(listener) => listener,
-            Err(e) => return eprintln!("[ws] cannot register listener: {e}"),
+            Err(e) => {
+                tracing::error!("cannot register WebSocket listener: {e}");
+                return;
+            }
         };
         loop {
             match listener.accept().await {
@@ -60,7 +63,7 @@ pub fn start() -> std::io::Result<Endpoint> {
                     tauri::async_runtime::spawn(handle(tcp, token.clone()));
                 }
                 Err(e) => {
-                    eprintln!("[ws] accept failed: {e}");
+                    tracing::warn!("WebSocket accept failed: {e}");
                     tokio::time::sleep(Duration::from_millis(100)).await;
                 }
             }
@@ -92,6 +95,7 @@ async fn handle(tcp: TcpStream, token: String) {
 }
 
 async fn reject(mut ws: WebSocketStream<TcpStream>, reason: &'static str) {
+    tracing::warn!(reason, "rejected WebSocket client");
     let frame = CloseFrame {
         code: CloseCode::Policy,
         reason: reason.into(),
@@ -100,7 +104,7 @@ async fn reject(mut ws: WebSocketStream<TcpStream>, reason: &'static str) {
 }
 
 async fn echo(mut ws: WebSocketStream<TcpStream>) {
-    eprintln!("[ws] echo client authenticated");
+    tracing::info!("echo client authenticated");
     let mut echoed = 0usize;
     while let Some(Ok(msg)) = ws.next().await {
         // tungstenite answers pings and close frames itself.
@@ -112,7 +116,7 @@ async fn echo(mut ws: WebSocketStream<TcpStream>) {
         }
         echoed += 1;
     }
-    eprintln!("[ws] echo client closed after {echoed} message(s)");
+    tracing::info!("echo client closed after {echoed} message(s)");
 }
 
 #[tauri::command]

@@ -1,14 +1,45 @@
 mod ws;
 
 use tauri::Manager;
+use tauri::plugin::TauriPlugin;
+use tauri_plugin_log::log::LevelFilter;
+use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
+
+/// Rust code logs with `tracing`; its `log` feature forwards every event to this
+/// plugin, which writes them to stdout and a rotating file in the app log dir
+/// (`%LOCALAPPDATA%\<identifier>\logs\k3-scrnz.log`). The webview logs through
+/// the same plugin (`src/lib/log.ts`).
+fn log_plugin<R: tauri::Runtime>() -> TauriPlugin<R> {
+    let level = if cfg!(debug_assertions) {
+        LevelFilter::Debug
+    } else {
+        LevelFilter::Info
+    };
+    tauri_plugin_log::Builder::new()
+        .clear_targets()
+        .targets([
+            Target::new(TargetKind::Stdout),
+            Target::new(TargetKind::LogDir {
+                file_name: Some("k3-scrnz".into()),
+            }),
+        ])
+        .level(level)
+        .level_for("tungstenite", LevelFilter::Warn)
+        .level_for("tokio_tungstenite", LevelFilter::Warn)
+        .timezone_strategy(TimezoneStrategy::UseLocal)
+        .max_file_size(5 * 1024 * 1024)
+        .rotation_strategy(RotationStrategy::KeepSome(5))
+        .build()
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(log_plugin())
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             let endpoint = ws::start()?;
-            eprintln!("[ws] listening on 127.0.0.1:{}", endpoint.port);
+            tracing::info!(port = endpoint.port, "WebSocket server listening");
             app.manage(endpoint);
             Ok(())
         })
