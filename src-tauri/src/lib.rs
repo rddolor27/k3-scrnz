@@ -69,7 +69,11 @@ pub fn run() {
             let jar = app
                 .path()
                 .resolve(scrcpy::SERVER_RESOURCE, BaseDirectory::Resource)?;
-            app.manage(Arc::new(mirror::MirrorHub::new(app.handle().clone(), jar)));
+            app.manage(Arc::new(mirror::MirrorHub::new(
+                app.handle().clone(),
+                Arc::clone(&config),
+                jar,
+            )));
             app.manage(logcat::LogcatState::new(
                 Arc::clone(&config),
                 Arc::clone(&hub),

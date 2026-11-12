@@ -88,6 +88,23 @@ impl ConfigStore {
             .unwrap_or(DEFAULT_LOG_RING_SIZE)
     }
 
+    /// `mainMaxSize` / `customerMaxSize`: the longest video side for each
+    /// screen (SPEC section 4). Out-of-range values fall back to the default.
+    pub fn max_size(&self, customer: bool) -> u32 {
+        let (key, default) = if customer {
+            ("customerMaxSize", 1280)
+        } else {
+            ("mainMaxSize", 1920)
+        };
+        self.lock()
+            .other
+            .get(key)
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|size| u32::try_from(size).ok())
+            .filter(|size| (320..=4096).contains(size))
+            .unwrap_or(default)
+    }
+
     /// Sets (or, with an empty name, clears) a device's friendly name and saves.
     pub async fn set_name(
         self: &Arc<Self>,

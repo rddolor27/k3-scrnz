@@ -18,6 +18,7 @@ use tokio::sync::{OnceCell, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::adb::{AdbServer, AdbStream, DeviceSel, ShellEvent, ShellProcess};
+use crate::config::ConfigStore;
 use crate::scrcpy::ScrcpyError;
 use crate::scrcpy::control::{self, Control, Input, KEYCODE_POWER, KEYCODE_SLEEP};
 use crate::scrcpy::device_msg::{self, DeviceMessage};
@@ -196,15 +197,17 @@ impl Session {
 
 pub struct MirrorHub {
     app: AppHandle,
+    config: Arc<ConfigStore>,
     jar_path: PathBuf,
     jar: OnceCell<Arc<Vec<u8>>>,
     sessions: Mutex<HashMap<String, Arc<Session>>>,
 }
 
 impl MirrorHub {
-    pub fn new(app: AppHandle, jar_path: PathBuf) -> Self {
+    pub fn new(app: AppHandle, config: Arc<ConfigStore>, jar_path: PathBuf) -> Self {
         Self {
             app,
+            config,
             jar_path,
             jar: OnceCell::new(),
             sessions: Mutex::new(HashMap::new()),
@@ -264,14 +267,14 @@ impl MirrorHub {
         let options = match role {
             Role::Main => Options {
                 display_id,
-                max_size: 1920,
+                max_size: self.config.max_size(false),
                 max_fps: 60,
                 bit_rate: 8_000_000,
                 main: true,
             },
             Role::Customer => Options {
                 display_id,
-                max_size: 1280,
+                max_size: self.config.max_size(true),
                 max_fps: 30,
                 bit_rate: 4_000_000,
                 main: false,
