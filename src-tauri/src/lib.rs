@@ -1,5 +1,9 @@
 pub mod adb;
+mod config;
+mod devices;
 mod ws;
+
+use std::sync::Arc;
 
 use tauri::Manager;
 use tauri::plugin::TauriPlugin;
@@ -42,9 +46,19 @@ pub fn run() {
             let endpoint = ws::start()?;
             tracing::info!(port = endpoint.port, "WebSocket server listening");
             app.manage(endpoint);
+
+            let config = Arc::new(config::ConfigStore::load());
+            let hub = Arc::new(devices::DeviceHub::new(app.handle().clone(), config));
+            devices::start(Arc::clone(&hub), adb::find_adb());
+            app.manage(hub);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ws::get_endpoint])
+        .invoke_handler(tauri::generate_handler![
+            ws::get_endpoint,
+            devices::list_devices,
+            devices::get_adb_status,
+            devices::set_device_name,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
