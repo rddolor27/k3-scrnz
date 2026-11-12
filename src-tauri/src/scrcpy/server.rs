@@ -75,6 +75,14 @@ pub async fn start(
     scid: u32,
     options: &Options,
 ) -> Result<ShellProcess, ScrcpyError> {
+    // Jars of sessions killed mid-start (app closed during push) are left behind;
+    // anything older than a minute is past any live session's push → start window.
+    let _ = adb::shell(
+        server,
+        sel,
+        "find /data/local/tmp -maxdepth 1 -name 'scrcpy-server-*.jar' -mmin +1 -delete",
+    )
+    .await;
     let path = jar_path(scid);
     adb::push(server, sel, jar, &path, MODE_FILE_0644).await?;
     let cmd = format!(
