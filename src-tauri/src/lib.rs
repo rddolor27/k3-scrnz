@@ -1,3 +1,4 @@
+pub mod adb;
 mod ws;
 
 use tauri::Manager;
