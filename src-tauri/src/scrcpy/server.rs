@@ -75,14 +75,6 @@ pub async fn start(
     scid: u32,
     options: &Options,
 ) -> Result<ShellProcess, ScrcpyError> {
-    // Jars of sessions killed mid-start (app closed during push) are left behind;
-    // anything older than a minute is past any live session's push → start window.
-    let _ = adb::shell(
-        server,
-        sel,
-        "find /data/local/tmp -maxdepth 1 -name 'scrcpy-server-*.jar' -mmin +1 -delete",
-    )
-    .await;
     let path = jar_path(scid);
     adb::push(server, sel, jar, &path, MODE_FILE_0644).await?;
     let cmd = format!(
@@ -90,7 +82,23 @@ pub async fn start(
         shell_quote(&path),
         server_args(scid, options)
     );
-    Ok(adb::shell_spawn(server, sel, &cmd).await?)
+    match adb::shell_spawn(server, sel, &cmd).await {
+        Ok(shell) => Ok(shell),
+        Err(e) => {
+            let _ = adb::shell(server, sel, &format!("rm -f {}", shell_quote(&path))).await;
+            Err(e.into())
+        }
+    }
+}
+
+/// Removes our jars left behind by sessions that were killed mid-start (the app
+/// closed during a push). Run once per device per app run, before its first
+/// push, so no live session of ours can own one yet.
+pub async fn sweep_stale_jars(server: &AdbServer, sel: &DeviceSel) {
+    let cmd = "rm -f /data/local/tmp/scrcpy-server-????????.jar";
+    if let Err(e) = adb::shell(server, sel, cmd).await {
+        tracing::debug!("stale jar sweep failed: {e}");
+    }
 }
 
 async fn timed<T>(

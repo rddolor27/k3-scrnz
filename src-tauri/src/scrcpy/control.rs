@@ -28,6 +28,10 @@ pub enum ControlError {
     TouchAction(u8),
     #[error("key action {0} is not allowed (only down and up)")]
     KeyAction(u8),
+    #[error("keycode {0} goes through the power button only (never a blind POWER)")]
+    PowerForbidden(i32),
+    #[error("copy key {0} is not allowed (only 0 none, 1 copy, 2 cut)")]
+    CopyKey(u8),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -249,7 +253,11 @@ pub enum Input {
     GetClipboard {
         copy_key: u8,
     },
-    ResetVideo,
+    /// `force` bypasses the 1 s rate limit (the toolbar button).
+    ResetVideo {
+        #[serde(default)]
+        force: bool,
+    },
     ExpandNotifications,
     CollapsePanels,
 }
@@ -280,6 +288,9 @@ pub fn to_controls(input: Input, session: (u16, u16)) -> Result<Vec<Control>, Co
         } => {
             if keycode == KEYCODE_WAKEUP {
                 return Err(ControlError::WakeupForbidden);
+            }
+            if keycode == KEYCODE_POWER || keycode == KEYCODE_SLEEP {
+                return Err(ControlError::PowerForbidden(keycode));
             }
             if action > 1 {
                 return Err(ControlError::KeyAction(action));
@@ -343,14 +354,24 @@ pub fn to_controls(input: Input, session: (u16, u16)) -> Result<Vec<Control>, Co
                 buttons,
             }]
         }
-        Input::BackOrScreenOn { action } => vec![Control::BackOrScreenOn { action }],
+        Input::BackOrScreenOn { action } => {
+            if action > 1 {
+                return Err(ControlError::KeyAction(action));
+            }
+            vec![Control::BackOrScreenOn { action }]
+        }
         Input::SetClipboard { text, paste } => vec![Control::SetClipboard {
             sequence: 0,
             paste,
             text,
         }],
-        Input::GetClipboard { copy_key } => vec![Control::GetClipboard { copy_key }],
-        Input::ResetVideo => vec![Control::ResetVideo],
+        Input::GetClipboard { copy_key } => {
+            if copy_key > 2 {
+                return Err(ControlError::CopyKey(copy_key));
+            }
+            vec![Control::GetClipboard { copy_key }]
+        }
+        Input::ResetVideo { .. } => vec![Control::ResetVideo],
         Input::ExpandNotifications => vec![Control::ExpandNotifications],
         Input::CollapsePanels => vec![Control::CollapsePanels],
     })

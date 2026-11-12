@@ -2,9 +2,9 @@
 //! (SPEC sections 4, 6). Video goes to the webview over the loopback WebSocket;
 //! input comes back over it as JSON and is validated here.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -26,17 +26,24 @@ use crate::scrcpy::server::{self, Connected, Options};
 use crate::scrcpy::video::{self, Packet};
 
 const FIRST_SESSION_TIMEOUT: Duration = Duration::from_secs(10);
+/// Pushing the jar and starting the shell must finish within this.
+const START_TIMEOUT: Duration = Duration::from_secs(20);
 /// Bounded queue to the viewer (SPEC section 6.4).
 const VIEWER_QUEUE: usize = 16;
 const CONTROL_QUEUE: usize = 256;
-/// RESET_VIDEO at most this often when the viewer falls behind.
+/// RESET_VIDEO at most this often unless forced (toolbar).
 const RESET_EVERY: Duration = Duration::from_secs(1);
-/// Config/session envelopes are never dropped; wait this long for room.
-const IMPORTANT_SEND_TIMEOUT: Duration = Duration::from_secs(1);
+/// Config/session envelopes are never dropped. A viewer that can't take one
+/// for this long is stuck: it is detached and must re-attach (fresh config).
+const STALLED_VIEWER: Duration = Duration::from_secs(5);
+/// A session nobody watches or controls (the webview reloaded or crashed) is
+/// stopped after this. Missing *frames* never stop a session (static screens).
+const NO_CLIENT_TIMEOUT: Duration = Duration::from_secs(15);
+const WATCHDOG_EVERY: Duration = Duration::from_secs(2);
 const LEFTOVER_CHECK_AFTER: Duration = Duration::from_secs(2);
 const SERVER_OUTPUT_LINES: usize = 20;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     Main,
@@ -71,22 +78,62 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// adb serials: letters, digits and `._:-` (tcpip serials contain `:`).
+fn valid_serial(serial: &str) -> Result<(), String> {
+    let ok = !serial.is_empty()
+        && serial.len() <= 128
+        && serial
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '-'));
+    if ok {
+        Ok(())
+    } else {
+        Err(format!("invalid device serial {serial:?}"))
+    }
+}
+
 pub struct Session {
     pub id: String,
     pub serial: String,
     pub role: Role,
+    display_id: u32,
     /// Size from the latest session packet; input must use it.
     size: Mutex<(u16, u16)>,
     control_tx: mpsc::Sender<Vec<u8>>,
     viewer: Mutex<Option<mpsc::Sender<Bytes>>>,
     need_key: AtomicBool,
     last_reset: Mutex<Option<Instant>>,
+    /// Connected video/control WebSockets, and since when there are none.
+    clients: AtomicUsize,
+    unwatched_since: Mutex<Option<Instant>>,
     cancel: CancellationToken,
+}
+
+/// Counts a connected WebSocket for the no-client watchdog while alive.
+pub struct ClientGuard(Arc<Session>);
+
+impl Drop for ClientGuard {
+    fn drop(&mut self) {
+        if self.0.clients.fetch_sub(1, Ordering::SeqCst) == 1 {
+            *lock(&self.0.unwatched_since) = Some(Instant::now());
+        }
+    }
 }
 
 impl Session {
     fn size(&self) -> (u16, u16) {
         *lock(&self.size)
+    }
+
+    /// Resolves when the session ends (stopped or failed).
+    pub async fn ended(&self) {
+        self.cancel.cancelled().await;
+    }
+
+    pub fn client(self: &Arc<Self>) -> ClientGuard {
+        self.clients.fetch_add(1, Ordering::SeqCst);
+        *lock(&self.unwatched_since) = None;
+        ClientGuard(Arc::clone(self))
     }
 
     /// Attaches a video viewer, replacing any previous one, and asks for a
@@ -105,6 +152,7 @@ impl Session {
         rx
     }
 
+    /// RESET_VIDEO, rate-limited to once per [`RESET_EVERY`] unless `force`.
     fn request_reset(&self, force: bool) {
         {
             let mut last = lock(&self.last_reset);
@@ -113,8 +161,10 @@ impl Session {
             }
             *last = Some(Instant::now());
         }
-        if let Ok(bytes) = control::serialize(&Control::ResetVideo) {
-            let _ = self.control_tx.try_send(bytes);
+        if let Ok(bytes) = control::serialize(&Control::ResetVideo)
+            && self.control_tx.try_send(bytes).is_err()
+        {
+            tracing::debug!(session = %self.id, "control queue full; reset skipped");
         }
     }
 
@@ -125,24 +175,29 @@ impl Session {
         }
     }
 
-    /// Never drops config/session envelopes; drops frames until the next key
-    /// frame when the viewer falls behind, and asks for one (SPEC section 6.4).
+    /// Never drops config/session envelopes (a stuck viewer is detached
+    /// instead); drops frames until the next key frame when the viewer falls
+    /// behind, and keeps asking for one (SPEC section 6.4).
     async fn deliver(&self, envelope: Bytes, important: bool, key: bool) {
         let Some(tx) = lock(&self.viewer).clone() else {
             return;
         };
         if important {
-            match tokio::time::timeout(IMPORTANT_SEND_TIMEOUT, tx.send(envelope)).await {
-                Ok(Ok(())) => {}
-                Ok(Err(_)) => self.detach(&tx),
-                Err(_) => {
-                    self.need_key.store(true, Ordering::SeqCst);
-                    self.request_reset(false);
-                }
+            tokio::select! {
+                sent = tokio::time::timeout(STALLED_VIEWER, tx.send(envelope)) => match sent {
+                    Ok(Ok(())) => {}
+                    Ok(Err(_)) => self.detach(&tx),
+                    Err(_) => {
+                        tracing::warn!(session = %self.id, "viewer stalled; detaching it");
+                        self.detach(&tx);
+                    }
+                },
+                () = self.cancel.cancelled() => {}
             }
             return;
         }
         if self.need_key.load(Ordering::SeqCst) && !key {
+            self.request_reset(false);
             return;
         }
         match tx.try_send(envelope) {
@@ -160,10 +215,14 @@ impl Session {
     }
 
     /// Validates and queues UI input. The customer session never takes input:
-    /// that screen has no touch, and its control socket is only a shutdown handle.
+    /// that screen has no touch, and its control socket is only a shutdown
+    /// handle. Both may ask for a key frame.
     pub async fn input(&self, input: Input) -> Result<(), String> {
-        // RESET_VIDEO isn't input: the customer viewer may ask for a key frame.
-        if self.role == Role::Customer && !matches!(input, Input::ResetVideo) {
+        if let Input::ResetVideo { force } = input {
+            self.request_reset(force);
+            return Ok(());
+        }
+        if self.role == Role::Customer {
             return Err("the customer screen is view-only".into());
         }
         for message in control::to_controls(input, self.size()).map_err(|e| e.to_string())? {
@@ -180,7 +239,8 @@ impl Session {
             .map_err(|_| "the session has ended".to_string())
     }
 
-    /// Key down + up. `serialize` refuses KEYCODE_WAKEUP.
+    /// Key down + up for the power button only (`device_power`). The control
+    /// WebSocket can't send POWER/SLEEP, and `serialize` refuses WAKEUP.
     async fn press(&self, keycode: i32) -> Result<(), String> {
         for action in [0, 1] {
             self.send(&Control::Key {
@@ -195,12 +255,27 @@ impl Session {
     }
 }
 
+/// Removes a (serial, display, role) from the in-flight set when dropped.
+struct Starting<'a> {
+    set: &'a Mutex<HashSet<(String, u32, Role)>>,
+    key: (String, u32, Role),
+}
+
+impl Drop for Starting<'_> {
+    fn drop(&mut self) {
+        lock(self.set).remove(&self.key);
+    }
+}
+
 pub struct MirrorHub {
     app: AppHandle,
     config: Arc<ConfigStore>,
     jar_path: PathBuf,
     jar: OnceCell<Arc<Vec<u8>>>,
     sessions: Mutex<HashMap<String, Arc<Session>>>,
+    starting: Mutex<HashSet<(String, u32, Role)>>,
+    /// Stale-jar sweep, once per device per app run, before its first push.
+    swept: Mutex<HashMap<String, Arc<OnceCell<()>>>>,
 }
 
 impl MirrorHub {
@@ -211,6 +286,8 @@ impl MirrorHub {
             jar_path,
             jar: OnceCell::new(),
             sessions: Mutex::new(HashMap::new()),
+            starting: Mutex::new(HashSet::new()),
+            swept: Mutex::new(HashMap::new()),
         }
     }
 
@@ -234,6 +311,16 @@ impl MirrorHub {
             .cloned()
     }
 
+    async fn sweep_once(&self, server: &AdbServer, sel: &DeviceSel, serial: &str) {
+        let cell = Arc::clone(
+            lock(&self.swept)
+                .entry(serial.to_owned())
+                .or_insert_with(|| Arc::new(OnceCell::new())),
+        );
+        cell.get_or_init(|| server::sweep_stale_jars(server, sel))
+            .await;
+    }
+
     fn emit_state(
         &self,
         session_id: &str,
@@ -252,13 +339,37 @@ impl MirrorHub {
         }
     }
 
-    /// Starts a session and resolves after its first session packet (SPEC section 4).
+    /// Starts a session and resolves after its first session packet (SPEC
+    /// section 4). One server per screen: a second concurrent start for the
+    /// same screen is refused (two `power_on` servers could press POWER twice),
+    /// and an existing session for it is replaced.
     async fn start(
         self: &Arc<Self>,
         serial: String,
         display_id: u32,
         role: Role,
     ) -> Result<Started, ScrcpyError> {
+        valid_serial(&serial).map_err(ScrcpyError::Start)?;
+        let key = (serial.clone(), display_id, role);
+        if !lock(&self.starting).insert(key.clone()) {
+            return Err(ScrcpyError::Start(
+                "a session for this screen is already starting".into(),
+            ));
+        }
+        let _starting = Starting {
+            set: &self.starting,
+            key,
+        };
+        let previous: Vec<Arc<Session>> = lock(&self.sessions)
+            .values()
+            .filter(|s| s.serial == serial && s.display_id == display_id && s.role == role)
+            .cloned()
+            .collect();
+        for old in previous {
+            tracing::info!(session = %old.id, "replacing the previous session for this screen");
+            old.cancel.cancel();
+        }
+
         let server = AdbServer::default();
         let sel = DeviceSel::Serial(serial.clone());
         let jar = self.jar().await?;
@@ -282,7 +393,13 @@ impl MirrorHub {
         };
         self.emit_state(&session_id, &serial, "starting", None);
 
-        let shell = server::start(&server, &sel, &jar, scid, &options).await?;
+        self.sweep_once(&server, &sel, &serial).await;
+        let shell = tokio::time::timeout(
+            START_TIMEOUT,
+            server::start(&server, &sel, &jar, scid, &options),
+        )
+        .await
+        .map_err(|_| ScrcpyError::Timeout("the server to start"))??;
         let output = Arc::new(Mutex::new(VecDeque::new()));
         let shell_task = tauri::async_runtime::spawn(read_server_output(
             shell,
@@ -290,19 +407,22 @@ impl MirrorHub {
             scid,
             Arc::clone(&output),
         ));
+        let server_said = || {
+            let tail: Vec<String> = lock(&output).iter().cloned().collect();
+            if tail.is_empty() {
+                String::new()
+            } else {
+                format!(" — server said: {}", tail.join(" | "))
+            }
+        };
         let connected = match server::connect(&server, &sel, scid).await {
             Ok(connected) => connected,
             Err(e) => {
                 shell_task.abort();
                 server::kill_leftover(&server, &sel, scid).await;
-                let tail: Vec<String> = lock(&output).iter().cloned().collect();
-                let detail = if tail.is_empty() {
-                    String::new()
-                } else {
-                    format!(" — server said: {}", tail.join(" | "))
-                };
-                self.emit_state(&session_id, &serial, "error", Some(format!("{e}{detail}")));
-                return Err(ScrcpyError::Start(format!("{e}{detail}")));
+                let message = format!("{e}{}", server_said());
+                self.emit_state(&session_id, &serial, "error", Some(message.clone()));
+                return Err(ScrcpyError::Start(message));
             }
         };
         tracing::info!(%serial, scid = %format!("{scid:08x}"), device = %connected.device_name, display_id, ?role, "scrcpy session connected");
@@ -312,11 +432,14 @@ impl MirrorHub {
             id: session_id.clone(),
             serial: serial.clone(),
             role,
+            display_id,
             size: Mutex::new((0, 0)),
             control_tx,
             viewer: Mutex::new(None),
             need_key: AtomicBool::new(true),
             last_reset: Mutex::new(None),
+            clients: AtomicUsize::new(0),
+            unwatched_since: Mutex::new(Some(Instant::now())),
             cancel: CancellationToken::new(),
         });
         lock(&self.sessions).insert(session_id.clone(), Arc::clone(&session));
@@ -339,15 +462,23 @@ impl MirrorHub {
                     height,
                 })
             }
-            _ => {
+            Ok(Err(_)) => {
+                session.cancel.cancel();
+                Err(ScrcpyError::Start(format!(
+                    "the server stopped before sending video{}",
+                    server_said()
+                )))
+            }
+            Err(_) => {
                 session.cancel.cancel();
                 Err(ScrcpyError::Timeout("the first video frame"))
             }
         }
     }
 
-    /// Runs a session until a stream ends or it is stopped, then cleans up in
-    /// SPEC section 6.7 order: control, video, shell, then a leftover check.
+    /// Runs a session until a stream ends, it is stopped, or nobody watches it
+    /// any more; then cleans up in SPEC section 6.7 order: control, video,
+    /// shell, then a leftover check.
     async fn run(
         self: Arc<Self>,
         session: Arc<Session>,
@@ -364,10 +495,14 @@ impl MirrorHub {
             r = device_messages(control_read, &self.app, &session) => r.map_err(|e| e.to_string()),
             r = video_loop(video, &session, first_tx) => r.map_err(|e| e.to_string()),
             _ = &mut shell_task => Err("scrcpy-server exited".into()),
+            () = watchdog(&session) => Err("nobody was watching it".into()),
             () = session.cancel.cancelled() => Ok(()),
         };
         // The streams were owned by the select branches and are closed now.
         shell_task.abort();
+        // Release the WebSockets still attached to this session.
+        *lock(&session.viewer) = None;
+        session.cancel.cancel();
         lock(&self.sessions).remove(&session.id);
         match &outcome {
             Ok(()) => {
@@ -390,6 +525,19 @@ impl MirrorHub {
             scid,
         )
         .await;
+    }
+}
+
+/// Resolves once the session has had no viewer and no control socket for
+/// [`NO_CLIENT_TIMEOUT`] (e.g. the webview reloaded without stopping it).
+async fn watchdog(session: &Session) {
+    let mut tick = tokio::time::interval(WATCHDOG_EVERY);
+    loop {
+        tick.tick().await;
+        let unwatched = *lock(&session.unwatched_since);
+        if unwatched.is_some_and(|since| since.elapsed() > NO_CLIENT_TIMEOUT) {
+            return;
+        }
     }
 }
 
@@ -508,7 +656,7 @@ async fn read_server_output(
             .map(str::trim)
             .filter(|l| !l.is_empty())
         {
-            if line.starts_with("ERROR") || line.starts_with("WARN") {
+            if line.contains("ERROR") || line.contains("WARN") {
                 tracing::warn!(%serial, %scid, "server: {line}");
             } else {
                 tracing::info!(%serial, %scid, "server: {line}");
@@ -556,6 +704,21 @@ async fn wakefulness(sel: &DeviceSel) -> Result<String, String> {
         .ok_or_else(|| format!("unexpected dumpsys power output: {}", text.trim()))
 }
 
+async fn input_keyevent(sel: &DeviceSel, keycode: i32) -> Result<(), String> {
+    let out = crate::adb::shell(
+        &AdbServer::default(),
+        sel,
+        &format!("input keyevent {keycode}"),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    if out.exit_code == Some(0) {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_owned())
+    }
+}
+
 /// Screen power per SPEC section 6.8: SLEEP (223) to turn off, POWER (26) only
 /// when `mWakefulness=Asleep`, never a blind POWER and never WAKEUP (224).
 /// Uses the main session's control socket when mirroring, else `input keyevent`.
@@ -565,6 +728,7 @@ pub async fn device_power(
     serial: String,
     action: String,
 ) -> Result<String, String> {
+    valid_serial(&serial)?;
     let sel = DeviceSel::Serial(serial.clone());
     let asleep = wakefulness(&sel).await? == "Asleep";
     let keycode = match (action.as_str(), asleep) {
@@ -574,20 +738,12 @@ pub async fn device_power(
         _ => return Err(format!("unknown power action {action}")),
     };
     if let Some(keycode) = keycode {
-        match hub.main_session(&serial) {
-            Some(session) => session.press(keycode).await?,
-            None => {
-                let out = crate::adb::shell(
-                    &AdbServer::default(),
-                    &sel,
-                    &format!("input keyevent {keycode}"),
-                )
-                .await
-                .map_err(|e| e.to_string())?;
-                if out.exit_code != Some(0) {
-                    return Err(String::from_utf8_lossy(&out.stderr).trim().to_owned());
-                }
-            }
+        let via_session = match hub.main_session(&serial) {
+            Some(session) => session.press(keycode).await.is_ok(),
+            None => false,
+        };
+        if !via_session {
+            input_keyevent(&sel, keycode).await?;
         }
         tracing::info!(%serial, keycode, "power key sent");
     }

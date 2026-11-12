@@ -30,7 +30,8 @@ export type ControlMessage =
 	| { t: 'backOrScreenOn'; action: 0 | 1 }
 	| { t: 'setClipboard'; text: string; paste: boolean }
 	| { t: 'getClipboard'; copyKey: 0 | 1 | 2 }
-	| { t: 'resetVideo' }
+	/** `force` skips Rust's 1 s rate limit (toolbar button only). */
+	| { t: 'resetVideo'; force?: boolean }
 	| { t: 'expandNotifications' }
 	| { t: 'collapsePanels' }
 

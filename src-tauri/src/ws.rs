@@ -79,7 +79,9 @@ pub fn start(app: AppHandle) -> std::io::Result<Endpoint> {
 
 async fn handle(tcp: TcpStream, token: String, app: AppHandle) {
     let _ = tcp.set_nodelay(true);
-    let Ok(mut ws) = tokio_tungstenite::accept_async(tcp).await else {
+    let Ok(Ok(mut ws)) =
+        tokio::time::timeout(HELLO_TIMEOUT, tokio_tungstenite::accept_async(tcp)).await
+    else {
         return;
     };
 
@@ -136,6 +138,7 @@ async fn echo(mut ws: WebSocketStream<TcpStream>) {
 /// Streams the session's envelopes until the viewer or the session goes away.
 async fn video(ws: WebSocketStream<TcpStream>, session: Arc<Session>) {
     tracing::debug!(session = %session.id, "video viewer attached");
+    let _client = session.client();
     let mut rx = session.attach_viewer();
     let (mut sink, mut stream) = ws.split();
     loop {
@@ -158,9 +161,16 @@ async fn video(ws: WebSocketStream<TcpStream>, session: Arc<Session>) {
     tracing::debug!(session = %session.id, "video viewer detached");
 }
 
-/// Applies JSON input messages in order (TCP keeps them ordered).
+/// Applies JSON input messages in order (TCP keeps them ordered), until the
+/// socket or the session closes.
 async fn control(mut ws: WebSocketStream<TcpStream>, session: Arc<Session>) {
-    while let Some(Ok(msg)) = ws.next().await {
+    let _client = session.client();
+    loop {
+        let msg = tokio::select! {
+            msg = ws.next() => msg,
+            () = session.ended() => break,
+        };
+        let Some(Ok(msg)) = msg else { break };
         let Message::Text(text) = msg else { continue };
         match serde_json::from_str::<Input>(text.as_str()) {
             Ok(input) => {
@@ -172,6 +182,7 @@ async fn control(mut ws: WebSocketStream<TcpStream>, session: Arc<Session>) {
             Err(e) => tracing::warn!(session = %session.id, "bad control message: {e}"),
         }
     }
+    let _ = ws.close(None).await;
 }
 
 #[tauri::command]
