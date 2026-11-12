@@ -3,11 +3,14 @@ mod config;
 mod devices;
 mod displays;
 mod files;
+mod mirror;
+mod scrcpy;
 mod ws;
 
 use std::sync::Arc;
 
 use tauri::Manager;
+use tauri::path::BaseDirectory;
 use tauri::plugin::TauriPlugin;
 use tauri_plugin_log::log::LevelFilter;
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
@@ -45,7 +48,7 @@ pub fn run() {
         .plugin(log_plugin())
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
-            let endpoint = ws::start()?;
+            let endpoint = ws::start(app.handle().clone())?;
             tracing::info!(port = endpoint.port, "WebSocket server listening");
             app.manage(endpoint);
 
@@ -62,12 +65,19 @@ pub fn run() {
             ));
             displays::start(Arc::clone(&display_hub));
             app.manage(display_hub);
+            let jar = app
+                .path()
+                .resolve(scrcpy::SERVER_RESOURCE, BaseDirectory::Resource)?;
+            app.manage(Arc::new(mirror::MirrorHub::new(app.handle().clone(), jar)));
             app.manage(Arc::clone(&config));
             app.manage(hub);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             ws::get_endpoint,
+            mirror::start_mirror,
+            mirror::stop_mirror,
+            mirror::device_power,
             devices::list_devices,
             devices::get_adb_status,
             devices::set_device_name,
