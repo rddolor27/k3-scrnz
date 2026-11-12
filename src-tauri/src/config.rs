@@ -10,6 +10,9 @@ use thiserror::Error;
 
 /// Longest friendly name accepted from the UI.
 const MAX_NAME_LEN: usize = 40;
+/// Kulay POS, the app "only my app" in the logcat panel filters on.
+const DEFAULT_APP_PACKAGE: &str = "pos.kulay.pos";
+const DEFAULT_LOG_RING_SIZE: usize = 50_000;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,6 +61,31 @@ impl ConfigStore {
 
     pub fn names(&self) -> BTreeMap<String, String> {
         self.lock().names.clone()
+    }
+
+    /// `appPackage`: the app whose log lines "only my app" keeps. Not
+    /// validated here; whoever puts it in a shell command must (see `logcat`).
+    pub fn app_package(&self) -> String {
+        self.lock()
+            .other
+            .get("appPackage")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|package| !package.is_empty())
+            .unwrap_or(DEFAULT_APP_PACKAGE)
+            .to_owned()
+    }
+
+    /// `logRingSize`: entries kept per device. A missing, non-numeric or zero
+    /// value falls back to the default.
+    pub fn log_ring_size(&self) -> usize {
+        self.lock()
+            .other
+            .get("logRingSize")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|size| usize::try_from(size).ok())
+            .filter(|size| *size > 0)
+            .unwrap_or(DEFAULT_LOG_RING_SIZE)
     }
 
     /// Sets (or, with an empty name, clears) a device's friendly name and saves.

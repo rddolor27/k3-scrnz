@@ -3,6 +3,7 @@ mod config;
 mod devices;
 mod displays;
 mod files;
+mod logcat;
 mod mirror;
 mod scrcpy;
 mod ws;
@@ -69,6 +70,10 @@ pub fn run() {
                 .path()
                 .resolve(scrcpy::SERVER_RESOURCE, BaseDirectory::Resource)?;
             app.manage(Arc::new(mirror::MirrorHub::new(app.handle().clone(), jar)));
+            app.manage(logcat::LogcatState::new(
+                Arc::clone(&config),
+                Arc::clone(&hub),
+            ));
             app.manage(Arc::clone(&config));
             app.manage(hub);
             Ok(())
@@ -91,6 +96,10 @@ pub fn run() {
             files::delete_path,
             files::reveal_file,
             files::list_packages,
+            logcat::start_logcat,
+            logcat::set_logcat_filter,
+            logcat::clear_logcat,
+            logcat::get_logcat_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
