@@ -14,8 +14,12 @@ export type WorkerEvent =
 	/** The decoder needs a fresh config + key frame: send RESET_VIDEO. */
 	| { type: 'need-key' }
 	/** Every 64 frames; `lag` should stay at 0–1 (spec section 8.2). */
-	| { type: 'stats'; lag: number; queue: number }
+	| { type: 'stats'; lag: number; queue: number; software: boolean }
+	/** Something worth a log line (e.g. the switch to software decoding). */
+	| { type: 'notice'; message: string }
 	/** A frame was drawn (throttled to twice a second). */
 	| { type: 'frame' }
 	| { type: 'closed' }
 	| { type: 'decoder-error'; message: string }
+	/** The decoder failed repeatedly; the session needs a restart. */
+	| { type: 'failed'; message: string }
