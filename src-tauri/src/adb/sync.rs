@@ -1,9 +1,9 @@
-//! `sync:` file push (SPEC section 5.5). Every integer is little-endian and the
-//! ids are literal ASCII.
+//! `sync:` file push (SPEC section 5.5) and pull. Every integer is little-endian
+//! and the ids are literal ASCII.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use super::{AdbError, AdbServer, DeviceSel};
 
@@ -13,6 +13,8 @@ pub const MODE_FILE_0644: u32 = 0o100_644;
 const DATA_MAX: usize = 64 * 1024;
 /// adbd rejects longer paths with "path too long".
 const PATH_MAX: usize = 1024;
+/// A pull that receives nothing for this long is stuck.
+const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// `SEND` + `"<remote>,<mode>"`, `DATA` chunks of at most 64 KiB, `DONE` + mtime.
 fn encode_send(bytes: &[u8], remote: &str, mode: u32, mtime: u32) -> Result<Vec<u8>, AdbError> {
@@ -78,6 +80,67 @@ pub async fn push(
     read_status(&mut stream).await?;
     stream.write_all(b"QUIT\0\0\0\0").await?;
     Ok(())
+}
+
+/// Pulls `remote` from the device into `out` (`RECV` v1: `DATA` chunks of at
+/// most 64 KiB, then an 8-byte `DONE`, or `FAIL` + message). Returns the size.
+pub async fn pull<W: AsyncWrite + Unpin>(
+    server: &AdbServer,
+    sel: &DeviceSel,
+    remote: &str,
+    out: &mut W,
+) -> Result<u64, AdbError> {
+    if remote.len() > PATH_MAX {
+        return Err(AdbError::Sync(format!("remote path too long: {remote}")));
+    }
+    let mut request = Vec::with_capacity(8 + remote.len());
+    request.extend_from_slice(b"RECV");
+    request.extend_from_slice(&len_u32(remote.len())?.to_le_bytes());
+    request.extend_from_slice(remote.as_bytes());
+
+    let mut stream = server.open(sel, "sync:").await?;
+    stream.write_all(&request).await?;
+    let mut chunk = vec![0u8; DATA_MAX];
+    let mut total = 0u64;
+    loop {
+        let mut header = [0u8; 8];
+        read_within(&mut stream, &mut header).await?;
+        let len = u32::from_le_bytes([header[4], header[5], header[6], header[7]]) as usize;
+        match &header[..4] {
+            b"DATA" if len <= DATA_MAX => {
+                read_within(&mut stream, &mut chunk[..len]).await?;
+                out.write_all(&chunk[..len]).await?;
+                total += len as u64;
+            }
+            b"DONE" => break,
+            b"FAIL" if len <= PATH_MAX * 4 => {
+                let mut message = vec![0u8; len];
+                stream.read_exact(&mut message).await?;
+                return Err(AdbError::Sync(
+                    String::from_utf8_lossy(&message).into_owned(),
+                ));
+            }
+            other => {
+                return Err(AdbError::Protocol(format!(
+                    "unexpected sync reply {other:02x?}"
+                )));
+            }
+        }
+    }
+    // The file is complete; a failed QUIT changes nothing.
+    let _ = stream.write_all(b"QUIT\0\0\0\0").await;
+    out.flush().await?;
+    Ok(total)
+}
+
+/// `read_exact` that fails when the device sends nothing for [`IDLE_TIMEOUT`]
+/// (a hung FUSE read), and reports EOF as the stream closing.
+async fn read_within<R: AsyncRead + Unpin>(r: &mut R, buf: &mut [u8]) -> Result<(), AdbError> {
+    match tokio::time::timeout(IDLE_TIMEOUT, r.read_exact(buf)).await {
+        Err(_) => Err(AdbError::Timeout),
+        Ok(Err(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => Err(AdbError::Closed),
+        Ok(result) => result.map(|_| ()).map_err(AdbError::from),
+    }
 }
 
 #[cfg(test)]

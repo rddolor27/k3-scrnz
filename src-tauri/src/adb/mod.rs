@@ -15,4 +15,4 @@ pub use error::AdbError;
 pub use host::{AdbServer, DeviceInfo, DeviceSel, DeviceState, Tracker, find_adb};
 pub use shell::{ShellEvent, ShellOutput, ShellProcess, shell, shell_quote, shell_spawn};
 pub use stream::AdbStream;
-pub use sync::{MODE_FILE_0644, push};
+pub use sync::{MODE_FILE_0644, pull, push};
