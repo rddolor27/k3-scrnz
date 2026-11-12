@@ -1,0 +1,295 @@
+/* Logcat panel (spec section 10.3, 11). Fills the height of its container. */
+
+.logcat {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+	background: var(--panel);
+	font-size: 13px;
+}
+
+.logcat-bar {
+	display: flex;
+	flex: none;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 8px;
+	border-bottom: 1px solid var(--border);
+	background: var(--panel-raised);
+}
+
+.logcat-title {
+	margin-right: 4px;
+	font-weight: 600;
+}
+
+.logcat-bar button,
+.logcat-bar input:not([type='checkbox']),
+.logcat-bar select,
+.logcat-unavailable button,
+.log-jump,
+.log-detail-close {
+	padding: 2px 10px;
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	background: var(--bg);
+	font: inherit;
+	color: inherit;
+}
+
+.logcat-bar button,
+.logcat-unavailable button,
+.log-jump,
+.log-detail-close {
+	background: var(--panel-raised);
+}
+
+.logcat-bar button:hover,
+.logcat-unavailable button:hover,
+.log-jump:hover,
+.log-detail-close:hover {
+	border-color: var(--accent);
+}
+
+.logcat-bar input:focus-visible,
+.logcat-bar select:focus-visible,
+.logcat-bar button:focus-visible {
+	outline: none;
+	border-color: var(--accent);
+}
+
+.logcat-bar input.logcat-search.invalid {
+	border-color: var(--bad);
+}
+
+.logcat-tag {
+	width: 150px;
+}
+
+.logcat-search {
+	width: 240px;
+	font-family: 'Cascadia Mono', Consolas, monospace;
+	font-size: 12px;
+}
+
+.logcat-bar button[aria-pressed='true'] {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+.logcat-bar .logcat-regex {
+	font-family: 'Cascadia Mono', Consolas, monospace;
+}
+
+.logcat-check {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.logcat-spacer {
+	flex: 1;
+}
+
+.logcat-skipped {
+	color: var(--wait);
+	font-size: 12px;
+}
+
+.logcat-count {
+	color: var(--muted);
+	font-size: 12px;
+}
+
+.logcat-note {
+	flex: none;
+	padding: 3px 10px;
+	border-bottom: 1px solid var(--border);
+	font-size: 12px;
+}
+
+.logcat-unavailable {
+	display: grid;
+	flex: 1;
+	gap: 8px;
+	place-content: center;
+	justify-items: center;
+}
+
+.logcat-unavailable p {
+	margin: 0;
+}
+
+/* List */
+
+.log-list {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-height: 0;
+}
+
+.log-body {
+	position: relative;
+	flex: 1;
+	min-height: 0;
+}
+
+.log-scroll {
+	position: absolute;
+	inset: 0;
+	overflow: auto;
+	overflow-anchor: none;
+	font-family: 'Cascadia Mono', Consolas, monospace;
+	font-size: 12px;
+	line-height: 18px;
+}
+
+.log-canvas {
+	position: relative;
+	width: 100%;
+}
+
+.log-row {
+	position: absolute;
+	top: 0;
+	right: 0;
+	left: 0;
+	display: grid;
+	grid-template-columns: 12ch 13ch 1ch 24ch minmax(0, 1fr);
+	column-gap: 1.5ch;
+	height: 18px;
+	padding: 0 8px;
+	overflow: hidden;
+	white-space: pre;
+	cursor: default;
+	user-select: none;
+}
+
+.log-row > span {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.log-row:hover {
+	background: var(--panel-raised);
+}
+
+.log-row.lv-f {
+	background: rgb(248 81 73 / 12%);
+}
+
+.log-row.selected {
+	background: #1f3354;
+}
+
+.log-time,
+.log-pid {
+	color: var(--muted);
+}
+
+.log-tag {
+	color: var(--text);
+}
+
+.log-level {
+	font-weight: 700;
+}
+
+/* Colour by level; the row's own colour is the level colour. */
+
+.lv-v {
+	color: var(--idle);
+}
+
+.lv-d {
+	color: var(--accent);
+}
+
+.lv-i {
+	color: var(--ok);
+}
+
+.lv-w {
+	color: var(--wait);
+}
+
+.lv-e,
+.lv-f {
+	color: var(--bad);
+}
+
+.lv-f .log-msg {
+	font-weight: 700;
+}
+
+.lv-u {
+	color: var(--muted);
+}
+
+.log-empty {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	pointer-events: none;
+}
+
+.log-jump {
+	position: absolute;
+	right: 22px;
+	bottom: 10px;
+	border-color: var(--accent);
+	box-shadow: 0 2px 8px rgb(0 0 0 / 40%);
+	color: var(--accent);
+}
+
+/* Details strip */
+
+.log-detail {
+	flex: none;
+	border-top: 1px solid var(--border);
+	background: var(--bg);
+}
+
+.log-detail-head {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 3px 8px;
+	background: var(--panel-raised);
+	font-family: 'Cascadia Mono', Consolas, monospace;
+	font-size: 12px;
+}
+
+.log-detail-tag {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text);
+}
+
+.log-detail-close {
+	padding: 0 8px;
+	font-size: 12px;
+}
+
+.log-detail-msg {
+	max-height: 150px;
+	margin: 0;
+	padding: 6px 8px;
+	overflow: auto;
+	font-family: 'Cascadia Mono', Consolas, monospace;
+	font-size: 12px;
+	line-height: 1.45;
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
+	user-select: text;
+}
