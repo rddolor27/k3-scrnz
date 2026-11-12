@@ -28,6 +28,8 @@ use crate::scrcpy::video::{self, Packet};
 const FIRST_SESSION_TIMEOUT: Duration = Duration::from_secs(10);
 /// Pushing the jar and starting the shell must finish within this.
 const START_TIMEOUT: Duration = Duration::from_secs(20);
+/// An emulator's cold boot; quick boot takes seconds.
+const BOOT_TIMEOUT: Duration = Duration::from_secs(180);
 /// Bounded queue to the viewer (SPEC section 6.4).
 const VIEWER_QUEUE: usize = 16;
 const CONTROL_QUEUE: usize = 256;
@@ -348,6 +350,7 @@ impl MirrorHub {
         serial: String,
         display_id: u32,
         role: Role,
+        max_size: Option<u32>,
     ) -> Result<Started, ScrcpyError> {
         valid_serial(&serial).map_err(ScrcpyError::Start)?;
         let key = (serial.clone(), display_id, role);
@@ -375,17 +378,20 @@ impl MirrorHub {
         let jar = self.jar().await?;
         let scid = rand::random::<u32>() & 0x7FFF_FFFF; // must fit in 31 bits
         let session_id = format!("{:08x}", rand::random::<u32>());
+        // A caller may ask for less than the configured size (grid tiles),
+        // never more.
+        let limit = |configured: u32| max_size.map_or(configured, |m| m.max(320).min(configured));
         let options = match role {
             Role::Main => Options {
                 display_id,
-                max_size: self.config.max_size(false),
+                max_size: limit(self.config.max_size(false)),
                 max_fps: 60,
                 bit_rate: 8_000_000,
                 main: true,
             },
             Role::Customer => Options {
                 display_id,
-                max_size: self.config.max_size(true),
+                max_size: limit(self.config.max_size(true)),
                 max_fps: 30,
                 bit_rate: 4_000_000,
                 main: false,
@@ -393,6 +399,11 @@ impl MirrorHub {
         };
         self.emit_state(&session_id, &serial, "starting", None);
 
+        // A just-started emulator is online in adb long before Android can
+        // run the server; a POS device only shows up once booted.
+        if serial.starts_with("emulator-") {
+            wait_for_boot(&server, &sel).await?;
+        }
         self.sweep_once(&server, &sel, &serial).await;
         let shell = tokio::time::timeout(
             START_TIMEOUT,
@@ -415,7 +426,12 @@ impl MirrorHub {
                 format!(" — server said: {}", tail.join(" | "))
             }
         };
-        let connected = match server::connect(&server, &sel, scid).await {
+        let connect_timeout = if serial.starts_with("emulator-") {
+            server::EMULATOR_CONNECT_TIMEOUT
+        } else {
+            server::CONNECT_TIMEOUT
+        };
+        let connected = match server::connect(&server, &sel, scid, connect_timeout).await {
             Ok(connected) => connected,
             Err(e) => {
                 shell_task.abort();
@@ -676,8 +692,9 @@ pub async fn start_mirror(
     serial: String,
     display_id: u32,
     role: Role,
+    max_size: Option<u32>,
 ) -> Result<Started, String> {
-    hub.start(serial, display_id, role)
+    hub.start(serial, display_id, role, max_size)
         .await
         .map_err(|e| e.to_string())
 }
@@ -686,6 +703,24 @@ pub async fn start_mirror(
 pub fn stop_mirror(hub: State<'_, Arc<MirrorHub>>, session_id: String) {
     if let Some(session) = hub.session(&session_id) {
         session.cancel.cancel();
+    }
+}
+
+/// Polls `sys.boot_completed` (a cold boot can take minutes).
+async fn wait_for_boot(server: &AdbServer, sel: &DeviceSel) -> Result<(), ScrcpyError> {
+    let deadline = tokio::time::Instant::now() + BOOT_TIMEOUT;
+    loop {
+        if let Ok(out) = crate::adb::shell(server, sel, "getprop sys.boot_completed").await
+            && String::from_utf8_lossy(&out.stdout).trim() == "1"
+        {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(ScrcpyError::Start(
+                "the emulator hasn't finished booting".into(),
+            ));
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
 

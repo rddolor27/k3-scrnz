@@ -14,8 +14,10 @@ use crate::adb::{
 
 /// `FAIL closed` on the socket means nothing listens yet: retry this often...
 const CONNECT_RETRY: Duration = Duration::from_millis(100);
-/// ...for this long (the Gemini needed about 1.3 s).
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+/// ...for this long (the Gemini needed about 1.3 s; SPEC section 6.2).
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+/// A just-booted emulator loads the server slowly (it took 10–15 s).
+pub const EMULATOR_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 const READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct Options {
@@ -117,9 +119,10 @@ pub async fn connect(
     server: &AdbServer,
     sel: &DeviceSel,
     scid: u32,
+    timeout: Duration,
 ) -> Result<Connected, ScrcpyError> {
     let socket = socket_name(scid);
-    let deadline = Instant::now() + CONNECT_TIMEOUT;
+    let deadline = Instant::now() + timeout;
     let mut video = loop {
         match server.open(sel, &socket).await {
             Ok(stream) => break stream,
