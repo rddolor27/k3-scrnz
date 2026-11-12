@@ -1,6 +1,7 @@
 pub mod adb;
 mod config;
 mod devices;
+mod files;
 mod ws;
 
 use std::sync::Arc;
@@ -58,6 +59,14 @@ pub fn run() {
             devices::list_devices,
             devices::get_adb_status,
             devices::set_device_name,
+            files::list_dir,
+            files::download_file,
+            files::upload_path,
+            files::upload_bytes,
+            files::make_dir,
+            files::delete_path,
+            files::reveal_file,
+            files::list_packages,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
