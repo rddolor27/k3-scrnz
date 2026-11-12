@@ -1,5 +1,6 @@
 mod mp4;
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufWriter};
 use std::path::{Path, PathBuf};
@@ -18,11 +19,16 @@ use tokio::sync::oneshot;
 
 use self::mp4::Mp4;
 use crate::files::{self, FilesError};
-use crate::mirror::{MirrorHub, Session};
+use crate::mirror::MirrorHub;
+use crate::scrcpy::video::{K_CONFIG, K_FRAME};
 
 const CAPTURE_HEADER: &str = "x-k3-capture";
 const MAX_DIMENSION: u32 = 8192;
 const RECORD_QUEUE: usize = 600;
+const GRID_MIN: u16 = 16;
+const GRID_MAX: u16 = 4096;
+const GRID_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const ENVELOPE: usize = 12;
 const MAX_DURATION: Duration = Duration::from_secs(30 * 60);
 // Offsets and the mdat size are 32-bit, so the file must stay under 4 GiB with the moov.
 const MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
@@ -33,6 +39,10 @@ pub enum CaptureError {
     Invalid(String),
     #[error("no such session")]
     UnknownSession,
+    #[error("no such recording")]
+    UnknownRecording,
+    #[error("this recording is already connected")]
+    AlreadyAttached,
     #[error("this session is already being recorded")]
     AlreadyRecording,
     #[error("this session isn't being recorded")]
@@ -57,6 +67,13 @@ pub struct ScreenshotSaved {
     path: String,
     copied: bool,
     copy_error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GridRecording {
+    id: String,
+    path: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -204,6 +221,25 @@ pub enum Msg {
     },
 }
 
+impl Msg {
+    // [kind u8][flags u8, bit 0 = key][2 zero bytes][pts u64 BE, µs] + Annex B payload
+    pub fn from_envelope(data: &Bytes) -> Option<Self> {
+        let (head, _) = data.split_first_chunk::<ENVELOPE>()?;
+        let [kind, flags, _, _, p0, p1, p2, p3, p4, p5, p6, p7] = *head;
+        let payload = data.slice(ENVELOPE..);
+        match kind {
+            K_CONFIG => Some(Self::Config(payload)),
+            K_FRAME => Some(Self::Frame {
+                key: flags & 1 != 0,
+                pts: u64::from_be_bytes([p0, p1, p2, p3, p4, p5, p6, p7]),
+                data: payload,
+                at: Instant::now(),
+            }),
+            _ => None,
+        }
+    }
+}
+
 pub enum Offer {
     Taken,
     Full,
@@ -243,7 +279,8 @@ struct Job {
 impl Recorder {
     pub fn start(
         app: AppHandle,
-        session: Arc<Session>,
+        session_id: String,
+        release: impl FnOnce(&Arc<Ending>) + Send + 'static,
         path: PathBuf,
         file: File,
         size: (u16, u16),
@@ -252,7 +289,6 @@ impl Recorder {
         let (tx, rx) = mpsc::sync_channel(RECORD_QUEUE);
         let ending = Arc::new(Ending::default());
         let (done_tx, done) = oneshot::channel();
-        let session_id = session.id.clone();
         let job = Job {
             session_id: session_id.clone(),
             path: path.clone(),
@@ -278,7 +314,7 @@ impl Recorder {
                         error: Some("the recording task stopped unexpectedly".into()),
                     }
                 });
-                session.release_recorder(&ending);
+                release(&ending);
                 if let Err(e) = app.emit("recording-ended", ended.clone()) {
                     tracing::warn!("can't emit recording-ended: {e}");
                 }
@@ -382,12 +418,23 @@ impl Writer {
         if self.mp4.is_none() && !key {
             return Ok(Flow::Continue);
         }
-        let nals = mp4::annexb_nals(data);
+        // Access unit delimiters (type 9) don't belong in MP4 samples; some players choke on them.
+        let nals: Vec<&[u8]> = mp4::annexb_nals(data)
+            .into_iter()
+            .filter(|nal| nal.first().is_some_and(|b| b & 0x1F != 9))
+            .collect();
         if nals.is_empty() {
             return Ok(Flow::Continue);
         }
         if self.mp4.is_none() {
-            let (Some(params), Some(file)) = (&self.params, self.file.take()) else {
+            // A WebCodecs stream has no config packet; its key frames carry SPS/PPS in-band.
+            if self.params.is_none() {
+                self.params = parse_params(data);
+            }
+            let Some(params) = &self.params else {
+                return Ok(Flow::Continue);
+            };
+            let Some(file) = self.file.take() else {
                 return Ok(Flow::Continue);
             };
             let (width, height) = self.size;
@@ -519,7 +566,16 @@ pub async fn start_recording(
         }
     };
     let started = session.begin_recording(|size, config| {
-        Recorder::start(app, Arc::clone(&session), path.clone(), file, size, config)
+        let owner = Arc::clone(&session);
+        Recorder::start(
+            app,
+            session_id.clone(),
+            move |ending| owner.release_recorder(ending),
+            path.clone(),
+            file,
+            size,
+            config,
+        )
     });
     if !started {
         let _ = tokio::fs::remove_file(&path).await;
@@ -541,5 +597,165 @@ pub async fn stop_recording(
     let done = session
         .end_recording(EndReason::Stopped, None)
         .ok_or(CaptureError::NotRecording)?;
+    done.await.map_err(|_| CaptureError::Lost)
+}
+
+struct Grid {
+    recorder: Recorder,
+    attached: bool,
+}
+
+#[derive(Clone, Default)]
+pub struct GridRecordings(Arc<Mutex<HashMap<String, Grid>>>);
+
+impl GridRecordings {
+    fn release(&self, id: &str, ending: &Arc<Ending>) {
+        let mut grids = lock(&self.0);
+        if grids.get(id).is_some_and(|g| g.recorder.is(ending)) {
+            grids.remove(id);
+        }
+    }
+
+    fn expire(&self, id: &str) {
+        let mut grids = lock(&self.0);
+        if grids.get(id).is_some_and(|g| !g.attached)
+            && let Some(grid) = grids.remove(id)
+        {
+            tracing::warn!(session = %id, "the grid recorder never connected");
+            grid.recorder.finish(
+                EndReason::Failed,
+                Some("the grid recorder never connected".into()),
+            );
+        }
+    }
+
+    pub fn attach(&self, id: &str) -> Result<(), CaptureError> {
+        let mut grids = lock(&self.0);
+        let grid = grids.get_mut(id).ok_or(CaptureError::UnknownRecording)?;
+        if std::mem::replace(&mut grid.attached, true) {
+            return Err(CaptureError::AlreadyAttached);
+        }
+        Ok(())
+    }
+
+    pub fn feed(&self, id: &str, msg: Msg) -> bool {
+        let mut grids = lock(&self.0);
+        let Some(grid) = grids.get(id) else {
+            return false;
+        };
+        match grid.recorder.offer(msg) {
+            Offer::Taken => true,
+            Offer::Full => {
+                tracing::warn!(session = %id, "grid recording queue full; ending the recording");
+                if let Some(grid) = grids.remove(id) {
+                    grid.recorder
+                        .finish(EndReason::Failed, Some("the disk can't keep up".into()));
+                }
+                false
+            }
+            Offer::Gone => {
+                grids.remove(id);
+                false
+            }
+        }
+    }
+
+    pub fn finish(
+        &self,
+        id: &str,
+        reason: EndReason,
+        error: Option<String>,
+    ) -> Option<oneshot::Receiver<RecordingEnded>> {
+        let grid = lock(&self.0).remove(id)?;
+        Some(grid.recorder.finish(reason, error))
+    }
+
+    pub fn end_all(&self) -> Vec<oneshot::Receiver<RecordingEnded>> {
+        let grids: Vec<Grid> = lock(&self.0).drain().map(|(_, grid)| grid).collect();
+        grids
+            .into_iter()
+            .map(|grid| grid.recorder.finish(EndReason::SessionEnded, None))
+            .collect()
+    }
+}
+
+fn grid_size(width: u32, height: u32) -> Result<(u16, u16), CaptureError> {
+    let dimension = |n: u32| {
+        u16::try_from(n)
+            .ok()
+            .filter(|n| (GRID_MIN..=GRID_MAX).contains(n) && n % 2 == 0)
+    };
+    match (dimension(width), dimension(height)) {
+        (Some(width), Some(height)) => Ok((width, height)),
+        _ => Err(CaptureError::Invalid(format!(
+            "the grid size must be even and between {GRID_MIN} and {GRID_MAX}"
+        ))),
+    }
+}
+
+#[tauri::command]
+pub async fn start_grid_recording(
+    app: AppHandle,
+    grids: State<'_, GridRecordings>,
+    name: String,
+    width: u32,
+    height: u32,
+) -> Result<GridRecording, CaptureError> {
+    let size = grid_size(width, height)?;
+    let name = file_name(&name, ".mp4")?;
+    let dir = files::downloads_root(&app)?;
+    tokio::fs::create_dir_all(&dir).await?;
+    let path = files::reserve_unique(&dir, &name).await?;
+    let file = match open_for_writing(&path).await {
+        Ok(file) => file,
+        Err(e) => {
+            let _ = tokio::fs::remove_file(&path).await;
+            return Err(e.into());
+        }
+    };
+    let id = format!("grid-{:016x}", rand::random::<u64>());
+    let registry = grids.inner().clone();
+    let recorder = Recorder::start(
+        app,
+        id.clone(),
+        {
+            let registry = registry.clone();
+            let id = id.clone();
+            move |ending| registry.release(&id, ending)
+        },
+        path.clone(),
+        file,
+        size,
+        None,
+    );
+    lock(&registry.0).insert(
+        id.clone(),
+        Grid {
+            recorder,
+            attached: false,
+        },
+    );
+    tauri::async_runtime::spawn({
+        let id = id.clone();
+        async move {
+            tokio::time::sleep(GRID_CONNECT_TIMEOUT).await;
+            registry.expire(&id);
+        }
+    });
+    tracing::info!(session = %id, path = %path.display(), width, height, "grid recording started");
+    Ok(GridRecording {
+        id,
+        path: path.display().to_string(),
+    })
+}
+
+#[tauri::command]
+pub async fn stop_grid_recording(
+    grids: State<'_, GridRecordings>,
+    id: String,
+) -> Result<RecordingEnded, CaptureError> {
+    let done = grids
+        .finish(&id, EndReason::Stopped, None)
+        .ok_or(CaptureError::UnknownRecording)?;
     done.await.map_err(|_| CaptureError::Lost)
 }

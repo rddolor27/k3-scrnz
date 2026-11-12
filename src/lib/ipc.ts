@@ -284,6 +284,25 @@ export const startRecording = (
 export const stopRecording = (sessionId: string): Promise<RecordingEnded> =>
 	invoke<RecordingEnded>('stop_recording', { sessionId })
 
+export interface GridRecordingStarted {
+	id: string
+	path: string
+}
+
+export const startGridRecording = (
+	name: string,
+	width: number,
+	height: number,
+): Promise<GridRecordingStarted> =>
+	invoke<GridRecordingStarted>('start_grid_recording', {
+		name,
+		width,
+		height,
+	})
+
+export const stopGridRecording = (id: string): Promise<RecordingEnded> =>
+	invoke<RecordingEnded>('stop_grid_recording', { id })
+
 export const onRecordingEnded = (
 	handler: (ended: RecordingEnded) => void,
 ): Promise<UnlistenFn> =>

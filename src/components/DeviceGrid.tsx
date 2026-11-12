@@ -7,6 +7,7 @@ import {
 } from 'react'
 
 import type { DeviceView } from '../lib/ipc'
+import { GridRecordBar } from './GridRecordBar'
 import { ScreenView } from './ScreenView'
 
 const GRID_MAX_SIZE = 1280
@@ -161,40 +162,46 @@ export const DeviceGrid = ({
 		)
 	}
 	return (
-		<div className='device-grid' ref={gridRef}>
-			{devices.map((device) => {
-				const size = sizes[device.serial] ?? auto
-				return (
-					<div
-						className='grid-tile'
-						key={device.serial}
-						style={{ width: size.w, height: size.h }}
-					>
-						<ScreenView
-							serial={device.serial}
-							displayId={0}
-							role='main'
-							compact
-							maxSize={GRID_MAX_SIZE}
-							toolbarStart={
-								<button
-									className='tile-name'
-									onClick={() => onOpen(device.serial)}
-									title={`${device.serial} · open its tab`}
-								>
-									{device.name}
-								</button>
-							}
-						/>
+		<div className='grid-view'>
+			<GridRecordBar serials={devices.map((device) => device.serial)} />
+			<div className='device-grid' ref={gridRef}>
+				{devices.map((device) => {
+					const size = sizes[device.serial] ?? auto
+					return (
 						<div
-							className='tile-resize'
-							title='Drag to resize · double-click to reset'
-							onPointerDown={(e) => startResize(device.serial, e)}
-							onDoubleClick={() => resetSize(device.serial)}
-						/>
-					</div>
-				)
-			})}
+							className='grid-tile'
+							key={device.serial}
+							style={{ width: size.w, height: size.h }}
+						>
+							<ScreenView
+								serial={device.serial}
+								displayId={0}
+								role='main'
+								compact
+								maxSize={GRID_MAX_SIZE}
+								tapLabel={device.name}
+								toolbarStart={
+									<button
+										className='tile-name'
+										onClick={() => onOpen(device.serial)}
+										title={`${device.serial} · open its tab`}
+									>
+										{device.name}
+									</button>
+								}
+							/>
+							<div
+								className='tile-resize'
+								title='Drag to resize · double-click to reset'
+								onPointerDown={(e) =>
+									startResize(device.serial, e)
+								}
+								onDoubleClick={() => resetSize(device.serial)}
+							/>
+						</div>
+					)
+				})}
+			</div>
 		</div>
 	)
 }

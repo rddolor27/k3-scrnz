@@ -11,7 +11,27 @@ export interface WorkerScreenshotRequest {
 	id: number
 }
 
-export type WorkerRequest = WorkerInit | WorkerScreenshotRequest
+export interface WorkerTapRequest {
+	type: 'tap'
+	// Receives a TapFrame after drawn frames, at most every 33 ms.
+	port: MessagePort
+}
+
+export interface WorkerUntapRequest {
+	type: 'untap'
+}
+
+export type WorkerRequest =
+	| WorkerInit
+	| WorkerScreenshotRequest
+	| WorkerTapRequest
+	| WorkerUntapRequest
+
+export interface TapFrame {
+	bitmap: ImageBitmap
+	width: number
+	height: number
+}
 
 export interface ScreenshotFrame {
 	png: ArrayBuffer

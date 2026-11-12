@@ -280,6 +280,45 @@ input {
 	height: 100%;
 }
 
+.grid-view {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+}
+
+.grid-view > .device-grid {
+	flex: 1;
+	min-height: 0;
+}
+
+.grid-bar {
+	flex: none;
+	flex-wrap: nowrap;
+	padding-bottom: 12px;
+}
+
+.grid-note {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 2px 10px;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.grid-note.err {
+	color: var(--bad);
+}
+
+.grid-note button.link {
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--accent);
+	text-decoration: underline;
+}
+
 .grid-tile {
 	position: relative;
 	display: flex;

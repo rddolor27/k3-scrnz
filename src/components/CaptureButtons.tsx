@@ -54,7 +54,7 @@ interface RecordingTimerProps {
 	since: number
 }
 
-const RecordingTimer = ({ since }: RecordingTimerProps): JSX.Element => {
+export const RecordingTimer = ({ since }: RecordingTimerProps): JSX.Element => {
 	const [now, setNow] = useState(since)
 
 	useEffect(() => {

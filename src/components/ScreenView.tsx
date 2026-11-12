@@ -23,6 +23,7 @@ import { error, info } from '../lib/log'
 import { useApkDrop } from '../state/apk-drop'
 import { useNote } from '../state/note'
 import { useScreenCapture } from '../state/screen-capture'
+import { registerTap } from '../video/frame-taps'
 import type { WorkerEvent, WorkerInit } from '../video/protocol'
 import { CaptureButtons } from './CaptureButtons'
 
@@ -42,6 +43,7 @@ interface ScreenViewProps {
 	compact?: boolean
 	toolbarStart?: ReactNode
 	maxSize?: number
+	tapLabel?: string
 }
 
 export const ScreenView = ({
@@ -52,11 +54,13 @@ export const ScreenView = ({
 	compact = false,
 	toolbarStart,
 	maxSize,
+	tapLabel,
 }: ScreenViewProps): JSX.Element => {
 	const hostRef = useRef<HTMLDivElement>(null)
 	const controlRef = useRef<ControlSocket | null>(null)
 	const workerRef = useRef<Worker | null>(null)
 	const retriesRef = useRef(0)
+	const [tapWorker, setTapWorker] = useState<Worker | null>(null)
 	const [phase, setPhase] = useState<Phase>({ kind: 'starting' })
 	const [hasFrame, setHasFrame] = useState(false)
 	const [session, setSession] = useState<string | null>(null)
@@ -209,6 +213,7 @@ export const ScreenView = ({
 					sessionId,
 				}
 				worker.postMessage(init, [offscreen])
+				setTapWorker(worker)
 				controlRef.current = openControl(ep, sessionId)
 				setPhase({ kind: 'streaming' })
 			} catch (e) {
@@ -416,11 +421,17 @@ export const ScreenView = ({
 			controlRef.current = null
 			workerRef.current = null
 			setSession(null)
+			setTapWorker(null)
 			worker.terminate()
 			canvas.remove()
 			cleanups.forEach((cleanup) => cleanup())
 		}
 	}, [serial, displayId, role, interactive, attempt, maxSize])
+
+	useEffect(() => {
+		if (tapLabel === undefined || !tapWorker) return
+		return registerTap({ key: serial, label: tapLabel, worker: tapWorker })
+	}, [serial, tapLabel, tapWorker])
 
 	const press = (keycode: number): void => {
 		controlRef.current?.send({

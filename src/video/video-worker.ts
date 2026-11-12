@@ -1,6 +1,6 @@
 import { connect } from '../lib/ws'
 import { avcCodecString } from './codec-string'
-import type { WorkerEvent, WorkerRequest } from './protocol'
+import type { TapFrame, WorkerEvent, WorkerRequest } from './protocol'
 
 const K_SESSION = 1
 const K_CONFIG = 2
@@ -13,6 +13,7 @@ const MAX_ERRORS = 5
 // An SPS without VUI `bitstream_restriction` makes Chromium's hardware decoder
 // reorder across the whole DPB (lag); sustained lag above this goes software.
 const MAX_LAG = 2
+const TAP_EVERY_MS = 33
 
 let canvas: OffscreenCanvas | null = null
 let ctx: OffscreenCanvasRenderingContext2D | null = null
@@ -31,9 +32,64 @@ let failed = false
 let highLag = 0
 let lagReported = false
 let drawn = false
+let tapPort: MessagePort | null = null
+let tapTimer = 0
+let tapSentAt = 0
+let tapPending = false
 
 const post = (event: WorkerEvent, transfer: Transferable[] = []): void => {
 	self.postMessage(event, { transfer })
+}
+
+const stopTap = (): void => {
+	self.clearTimeout(tapTimer)
+	tapTimer = 0
+	tapPending = false
+	tapPort?.close()
+	tapPort = null
+}
+
+const sendTap = (): void => {
+	tapTimer = 0
+	const port = tapPort
+	if (!port || !canvas || !tapPending) return
+	tapPending = false
+	tapSentAt = performance.now()
+	// Bitmaps, not VideoFrames: the hardware decoder's buffers are finite.
+	createImageBitmap(canvas)
+		.then((bitmap) => {
+			if (tapPort !== port) {
+				bitmap.close()
+				return
+			}
+			const frame: TapFrame = {
+				bitmap,
+				width: bitmap.width,
+				height: bitmap.height,
+			}
+			port.postMessage(frame, [bitmap])
+		})
+		.catch((e: unknown) => {
+			if (tapPort === port) stopTap()
+			post({ type: 'notice', message: `frame tap failed: ${String(e)}` })
+		})
+}
+
+// Throttled, with a trailing send so the last frame before a still screen goes out.
+const queueTap = (): void => {
+	if (!tapPort) return
+	tapPending = true
+	if (tapTimer) return
+	const wait = Math.max(0, TAP_EVERY_MS - (performance.now() - tapSentAt))
+	tapTimer = self.setTimeout(sendTap, wait)
+}
+
+const startTap = (port: MessagePort): void => {
+	stopTap()
+	tapPort = port
+	if (!drawn) return
+	tapPending = true
+	sendTap()
 }
 
 const requestKey = (): void => {
@@ -59,6 +115,7 @@ const onFrame = (frame: VideoFrame): void => {
 			}
 			ctx.drawImage(frame, 0, 0)
 			drawn = true
+			queueTap()
 		}
 	} finally {
 		frame.close() // always: hardware output buffers are finite
@@ -233,6 +290,14 @@ self.onmessage = (e: MessageEvent<WorkerRequest>): void => {
 	const request = e.data
 	if (request.type === 'screenshot') {
 		void takeScreenshot(request.id)
+		return
+	}
+	if (request.type === 'tap') {
+		startTap(request.port)
+		return
+	}
+	if (request.type === 'untap') {
+		stopTap()
 		return
 	}
 	canvas = request.canvas

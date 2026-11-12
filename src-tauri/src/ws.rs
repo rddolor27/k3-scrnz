@@ -11,6 +11,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 
+use crate::capture::{CaptureError, EndReason, GridRecordings, Msg};
 use crate::mirror::{MirrorHub, Session};
 use crate::scrcpy::control::Input;
 
@@ -28,6 +29,11 @@ struct Hello {
     token: String,
     role: String,
     session_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RecordControl {
+    t: String,
 }
 
 pub fn start(app: AppHandle) -> std::io::Result<Endpoint> {
@@ -92,11 +98,21 @@ async fn handle(tcp: TcpStream, token: String, app: AppHandle) {
                 (None, _) => reject(ws, "no such session").await,
             }
         }
+        "record" => {
+            let attached = match (hello.session_id, app.try_state::<GridRecordings>()) {
+                (Some(id), Some(grids)) => grids.attach(&id).map(|()| (id, grids.inner().clone())),
+                _ => Err(CaptureError::UnknownRecording),
+            };
+            match attached {
+                Ok((id, grids)) => record(ws, grids, id).await,
+                Err(e) => reject(ws, &e.to_string()).await,
+            }
+        }
         _ => reject(ws, "unknown role").await,
     }
 }
 
-async fn reject(mut ws: WebSocketStream<TcpStream>, reason: &'static str) {
+async fn reject(mut ws: WebSocketStream<TcpStream>, reason: &str) {
     tracing::warn!(reason, "rejected WebSocket client");
     let frame = CloseFrame {
         code: CloseCode::Policy,
@@ -165,6 +181,42 @@ async fn control(mut ws: WebSocketStream<TcpStream>, session: Arc<Session>) {
         }
     }
     let _ = ws.close(None).await;
+}
+
+async fn record(mut ws: WebSocketStream<TcpStream>, grids: GridRecordings, id: String) {
+    tracing::info!(session = %id, "grid recorder attached");
+    let end = loop {
+        match ws.next().await {
+            Some(Ok(Message::Binary(data))) => match Msg::from_envelope(&data) {
+                Some(msg) => {
+                    if !grids.feed(&id, msg) {
+                        break None;
+                    }
+                }
+                None => tracing::warn!(session = %id, "bad grid recorder message"),
+            },
+            Some(Ok(Message::Text(text))) => {
+                let ended = serde_json::from_str::<RecordControl>(text.as_str())
+                    .is_ok_and(|c| c.t == "end");
+                if ended {
+                    break Some((EndReason::Stopped, None));
+                }
+            }
+            Some(Ok(Message::Close(_)) | Err(_)) | None => {
+                tracing::warn!(session = %id, "grid recorder disconnected");
+                break Some((
+                    EndReason::Failed,
+                    Some("the grid recorder disconnected".to_owned()),
+                ));
+            }
+            Some(Ok(_)) => {}
+        }
+    };
+    if let Some((reason, error)) = end {
+        grids.finish(&id, reason, error);
+    }
+    let _ = ws.close(None).await;
+    tracing::debug!(session = %id, "grid recorder detached");
 }
 
 #[tauri::command]

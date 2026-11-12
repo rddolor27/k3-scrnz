@@ -1,6 +1,6 @@
 import type { Endpoint } from './ipc'
 
-export type Role = 'video' | 'control' | 'echo'
+export type Role = 'video' | 'control' | 'echo' | 'record'
 
 export const connect = (
 	ep: Endpoint,

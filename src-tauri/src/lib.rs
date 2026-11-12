@@ -80,6 +80,7 @@ pub fn run() {
                 Arc::clone(&config),
                 Arc::clone(&hub),
             ));
+            app.manage(capture::GridRecordings::default());
             app.manage(stats::StatsState::new());
             app.manage(emulator::EmulatorState::new(app.path().app_log_dir().ok()));
             app.manage(Arc::clone(&config));
@@ -107,6 +108,8 @@ pub fn run() {
             capture::save_screenshot,
             capture::start_recording,
             capture::stop_recording,
+            capture::start_grid_recording,
+            capture::stop_grid_recording,
             apps::install_apk_path,
             apps::install_apk_bytes,
             apps::app_action,
@@ -125,17 +128,21 @@ pub fn run() {
             if !matches!(event, tauri::RunEvent::Exit) {
                 return;
             }
+            let mut pending = Vec::new();
             if let Some(hub) = app.try_state::<Arc<mirror::MirrorHub>>() {
-                let pending = hub.end_recordings();
-                if !pending.is_empty() {
-                    // Without its moov box a recording doesn't play.
-                    tauri::async_runtime::block_on(async {
-                        let all = futures_util::future::join_all(pending);
-                        if tokio::time::timeout(RECORDING_FINISH, all).await.is_err() {
-                            tracing::warn!("recordings did not finish before exit");
-                        }
-                    });
-                }
+                pending.extend(hub.end_recordings());
+            }
+            if let Some(grids) = app.try_state::<capture::GridRecordings>() {
+                pending.extend(grids.end_all());
+            }
+            if !pending.is_empty() {
+                // Without its moov box a recording doesn't play.
+                tauri::async_runtime::block_on(async {
+                    let all = futures_util::future::join_all(pending);
+                    if tokio::time::timeout(RECORDING_FINISH, all).await.is_err() {
+                        tracing::warn!("recordings did not finish before exit");
+                    }
+                });
             }
             if let Some(emulators) = app.try_state::<emulator::EmulatorState>() {
                 emulator::shutdown(&emulators);

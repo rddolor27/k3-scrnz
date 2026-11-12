@@ -43,7 +43,7 @@ export interface ScreenCapture {
 	toggleRecording: () => void
 }
 
-const describeEnd = (
+export const describeEnd = (
 	ended: RecordingEnded,
 ): { text: string; options: NoteOptions } => {
 	const { reason, bytes, error, durationMs, path } = ended
