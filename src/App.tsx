@@ -1,7 +1,9 @@
 import { type JSX, useEffect, useState } from 'react'
 
+import { DeviceGrid } from './components/DeviceGrid'
 import { DevicePane } from './components/DevicePane'
 import { DeviceTabs } from './components/DeviceTabs'
+import { EmulatorMenu } from './components/EmulatorMenu'
 import { StatusBar } from './components/StatusBar'
 import { type AdbStatus, setDeviceName, setVisibleDevice } from './lib/ipc'
 import { error } from './lib/log'
@@ -21,12 +23,28 @@ export const App = (): JSX.Element => {
 	const [selected, setSelected] = useState<string | null>(null)
 	const [hiddenAt, setHiddenAt] = useState<Record<string, number>>({})
 	const [paused, setPaused] = useState(false)
+	const [grid, setGrid] = useState(false)
 	// Falls back to the first tab when the selected device's tab is removed.
 	const current =
 		devices.find((d) => d.serial === selected) ?? devices[0] ?? null
 	const currentSerial = current?.serial ?? null
+	const onlineDevices = devices.filter((d) => d.state === 'device' && !d.gone)
+	const showGrid = grid && onlineDevices.length > 0
+	const visibleSerial = showGrid ? null : currentSerial
+
+	// The grid and a device pane never mirror the same screen at once (the
+	// hub replaces a session for the same screen), so no pane stays mounted.
+	const selectGrid = (): void => {
+		setGrid(true)
+		setHiddenAt({})
+	}
 
 	const select = (serial: string): void => {
+		if (showGrid) {
+			setGrid(false)
+			setSelected(serial)
+			return
+		}
 		if (currentSerial && currentSerial !== serial) {
 			const now = Date.now()
 			setHiddenAt((hidden) => {
@@ -75,11 +93,11 @@ export const App = (): JSX.Element => {
 
 	// Rust polls the visible device's displays (spec 7.1), also on focus.
 	useEffect(() => {
-		void setVisibleDevice(currentSerial)
-		const onFocus = (): void => void setVisibleDevice(currentSerial)
+		void setVisibleDevice(visibleSerial)
+		const onFocus = (): void => void setVisibleDevice(visibleSerial)
 		window.addEventListener('focus', onFocus)
 		return (): void => window.removeEventListener('focus', onFocus)
-	}, [currentSerial])
+	}, [visibleSerial])
 
 	// App shortcuts (spec section 9.3), in the capture phase and stopped there,
 	// so they never reach a mirrored device: Ctrl+1..9, Ctrl+(Shift+)Tab and
@@ -129,6 +147,7 @@ export const App = (): JSX.Element => {
 	const mounted = devices.filter(
 		(d) =>
 			!paused &&
+			!showGrid &&
 			(d.serial === currentSerial ||
 				Object.prototype.hasOwnProperty.call(hiddenAt, d.serial)),
 	)
@@ -142,10 +161,16 @@ export const App = (): JSX.Element => {
 					selected={currentSerial}
 					onSelect={select}
 					onRename={rename}
+					onSelectGrid={onlineDevices.length > 0 ? selectGrid : null}
+					gridSelected={showGrid}
 				/>
+				<EmulatorMenu onOpen={select} />
 			</header>
 			<main className='content'>
 				{!current && <NoDevices adb={adb} />}
+				{showGrid && !paused && (
+					<DeviceGrid devices={onlineDevices} onOpen={select} />
+				)}
 				{mounted.map((device) => (
 					<div
 						key={device.serial}

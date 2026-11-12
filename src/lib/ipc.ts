@@ -59,10 +59,36 @@ export interface AppStats {
 	/** Summed working sets (an upper bound: WebView2 processes share pages). */
 	memoryBytes: number
 	processes: number
+	/** Emulators started by the app, counted apart from it. */
+	emulatorCpuPercent: number
+	emulatorMemoryBytes: number
 }
 
 export const getAppStats = (): Promise<AppStats> =>
 	invoke<AppStats>('get_app_stats')
+
+/** src-tauri/src/emulator.rs `Avd`. */
+export interface Avd {
+	name: string
+	/** The adb serial while it runs (once booted far enough for getprop). */
+	serial: string | null
+}
+
+export const listAvds = (): Promise<Avd[]> => invoke<Avd[]>('list_avds')
+
+/**
+ * Boots the AVD without a window; resolves with its adb serial once it has
+ * survived a few seconds. Its tab mirrors it once adb sees it.
+ */
+export const startEmulator = (avd: string): Promise<string> =>
+	invoke<string>('start_emulator', { avd })
+
+/** Shuts an emulator down through its console (saves its quick boot). */
+export const stopEmulator = (serial: string): Promise<void> =>
+	invoke<void>('stop_emulator', { serial })
+
+export const isEmulator = (serial: string): boolean =>
+	serial.startsWith('emulator-')
 
 /** Saves a friendly name; an empty name clears it. */
 export const setDeviceName = (serial: string, name: string): Promise<void> =>
@@ -185,12 +211,19 @@ export interface SessionState {
 }
 
 /** Resolves after the first video session packet (spec section 4). */
+/** `maxSize` can only lower the configured size (grid tiles use 1280). */
 export const startMirror = (
 	serial: string,
 	displayId: number,
 	role: MirrorRole,
+	maxSize?: number,
 ): Promise<MirrorStarted> =>
-	invoke<MirrorStarted>('start_mirror', { serial, displayId, role })
+	invoke<MirrorStarted>('start_mirror', {
+		serial,
+		displayId,
+		role,
+		maxSize: maxSize ?? null,
+	})
 
 export const stopMirror = (sessionId: string): Promise<void> =>
 	invoke<void>('stop_mirror', { sessionId })

@@ -37,17 +37,28 @@ interface StatsTextProps {
 	stats: AppStats
 }
 
+const MIB = 1024 * 1024
+
 const StatsText = ({ stats }: StatsTextProps): JSX.Element => {
-	const mb = Math.round(stats.memoryBytes / (1024 * 1024))
+	const mb = Math.round(stats.memoryBytes / MIB)
+	const emulatorGb = stats.emulatorMemoryBytes / (1024 * MIB)
 	return (
-		<span
-			className={
-				stats.memoryBytes > RAM_TARGET_BYTES ? 'warn' : undefined
-			}
-			title={`k3.scrnz and ${stats.processes - 1} WebView2 processes; RAM is the summed working set`}
-		>
-			CPU {stats.cpuPercent.toFixed(1)}% · RAM {mb} MB
-		</span>
+		<>
+			<span
+				className={
+					stats.memoryBytes > RAM_TARGET_BYTES ? 'warn' : undefined
+				}
+				title={`k3.scrnz and ${stats.processes - 1} WebView2 processes; RAM is the summed working set`}
+			>
+				CPU {stats.cpuPercent.toFixed(1)}% · RAM {mb} MB
+			</span>
+			{stats.emulatorMemoryBytes > 0 && (
+				<span title='Emulators started from k3.scrnz'>
+					Emulator CPU {stats.emulatorCpuPercent.toFixed(1)}% · RAM{' '}
+					{emulatorGb.toFixed(1)} GB
+				</span>
+			)}
+		</>
 	)
 }
 

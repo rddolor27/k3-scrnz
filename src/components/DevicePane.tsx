@@ -1,7 +1,8 @@
 import { type JSX, useEffect, useRef, useState } from 'react'
 
 import { stateHint, stateTone } from '../lib/device-state'
-import type { DeviceView } from '../lib/ipc'
+import { type DeviceView, isEmulator, stopEmulator } from '../lib/ipc'
+import { warn } from '../lib/log'
 import { CustomerScreens, useCustomerDisplays } from './CustomerScreens'
 import { FileExplorer } from './FileExplorer'
 import { LogcatPanel } from './LogcatPanel'
@@ -13,6 +14,8 @@ const LOG_HEIGHT_KEY = 'k3.logHeight'
 const CUSTOMER_KEY = 'k3.customerPanel'
 const MIN_LOG = 120
 const KEEP_SCREEN_MS = 15_000
+/** The emulator encodes video in software; a smaller stream keeps lag low. */
+const EMULATOR_MAX_SIZE = 1280
 
 const readNumber = (key: string, fallback: number): number => {
 	try {
@@ -67,6 +70,9 @@ export const DevicePane = ({ device }: DevicePaneProps): JSX.Element => {
 				<span className={`badge ${tone}`}>
 					{device.gone ? 'disconnected' : device.state}
 				</span>
+				{isEmulator(device.serial) && online && (
+					<StopEmulator serial={device.serial} />
+				)}
 				<div className='views' role='tablist'>
 					{(['screen', 'files', 'info'] as const).map((v) => (
 						<button
@@ -106,6 +112,32 @@ export const DevicePane = ({ device }: DevicePaneProps): JSX.Element => {
 				))}
 			{view === 'info' && <Overview device={device} />}
 		</section>
+	)
+}
+
+interface StopEmulatorProps {
+	serial: string
+}
+
+/** A headless emulator has no window to close; this shuts it down. */
+const StopEmulator = ({ serial }: StopEmulatorProps): JSX.Element => {
+	const [state, setState] = useState<'idle' | 'stopping' | string>('idle')
+	const stop = (): void => {
+		setState('stopping')
+		stopEmulator(serial).catch((e: unknown) => {
+			void warn(`stopping emulator ${serial} failed: ${String(e)}`)
+			setState(String(e))
+		})
+	}
+	return (
+		<span className='stop-emulator'>
+			<button onClick={stop} disabled={state === 'stopping'}>
+				{state === 'stopping' ? 'Stopping…' : '■ Stop emulator'}
+			</button>
+			{state !== 'idle' && state !== 'stopping' && (
+				<span className='err'>{state}</span>
+			)}
+		</span>
 	)
 }
 
@@ -170,7 +202,12 @@ const ScreenLayout = ({ serial, hidden }: ScreenLayoutProps): JSX.Element => {
 			}}
 		>
 			<div className='screens'>
-				<ScreenView serial={serial} displayId={0} role='main' />
+				<ScreenView
+					serial={serial}
+					displayId={0}
+					role='main'
+					maxSize={isEmulator(serial) ? EMULATOR_MAX_SIZE : undefined}
+				/>
 				{customers.length > 0 && (
 					<>
 						<button

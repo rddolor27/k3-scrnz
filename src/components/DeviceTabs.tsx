@@ -8,6 +8,9 @@ interface DeviceTabsProps {
 	selected: string | null
 	onSelect: (serial: string) => void
 	onRename: (serial: string, name: string) => void
+	/** The "All devices" tab; hidden when `null`. */
+	onSelectGrid: (() => void) | null
+	gridSelected: boolean
 }
 
 /** One tab per device (spec section 11). Double-click a tab to rename it. */
@@ -16,6 +19,8 @@ export const DeviceTabs = ({
 	selected,
 	onSelect,
 	onRename,
+	onSelectGrid,
+	gridSelected,
 }: DeviceTabsProps): JSX.Element => {
 	// Keyed by transport id too: a device that is removed mid-rename comes back
 	// with a new transport id, so the input doesn't pop up again.
@@ -26,6 +31,17 @@ export const DeviceTabs = ({
 
 	return (
 		<div className='tabs' role='tablist'>
+			{onSelectGrid && (
+				<button
+					role='tab'
+					aria-selected={gridSelected}
+					className='tab tab-grid'
+					title='Every connected POS in one view'
+					onClick={onSelectGrid}
+				>
+					⊞ All devices
+				</button>
+			)}
 			{devices.map((device, index) => {
 				if (
 					device.serial === editing?.serial &&
@@ -50,7 +66,9 @@ export const DeviceTabs = ({
 					<button
 						key={device.serial}
 						role='tab'
-						aria-selected={device.serial === selected}
+						aria-selected={
+							!gridSelected && device.serial === selected
+						}
 						className={device.gone ? 'tab gone' : 'tab'}
 						title={`${shortcut}double-click to rename`}
 						onClick={() => onSelect(device.serial)}

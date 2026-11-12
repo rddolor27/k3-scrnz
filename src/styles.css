@@ -278,6 +278,134 @@ input {
 	flex: 1;
 }
 
+/* All-devices grid */
+
+.device-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+	grid-auto-rows: minmax(260px, 1fr);
+	gap: 12px;
+	height: 100%;
+}
+
+.grid-tile {
+	display: flex;
+	min-width: 0;
+	min-height: 0;
+	padding: 8px;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: var(--panel);
+}
+
+.screen-toolbar.compact {
+	flex-wrap: nowrap;
+	gap: 4px;
+}
+
+.screen-toolbar.compact button {
+	padding: 2px 7px;
+}
+
+.screen-toolbar .tile-name {
+	overflow: hidden;
+	max-width: 220px;
+	margin-right: 6px;
+	border-color: transparent;
+	background: none;
+	font-weight: 600;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.tab-grid {
+	font-weight: 600;
+}
+
+/* Emulator menu */
+
+.emulator-menu {
+	position: relative;
+	display: flex;
+	align-items: center;
+	margin-left: auto;
+}
+
+.emulator-menu > button {
+	padding: 4px 10px;
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	background: var(--panel-raised);
+}
+
+.emulator-menu > button:hover {
+	border-color: var(--accent);
+}
+
+.emulator-popover {
+	position: absolute;
+	z-index: 10;
+	top: calc(100% + 4px);
+	right: 0;
+	display: grid;
+	gap: 6px;
+	width: 340px;
+	padding: 10px;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: var(--panel-raised);
+	box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
+	font-size: 13px;
+}
+
+.emulator-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.emulator-row .name {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.emulator-row button {
+	padding: 2px 10px;
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	background: var(--panel);
+}
+
+.emulator-row button:hover:not(:disabled) {
+	border-color: var(--accent);
+}
+
+.emulator-row .link {
+	border: 0;
+	background: none;
+	font-size: 12px;
+}
+
+.stop-emulator {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 12px;
+}
+
+.stop-emulator button {
+	padding: 2px 10px;
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	background: var(--panel-raised);
+}
+
+.stop-emulator button:hover:not(:disabled) {
+	border-color: var(--bad);
+}
+
 .screen-toolbar,
 .screen-label {
 	display: flex;

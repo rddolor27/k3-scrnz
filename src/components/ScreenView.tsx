@@ -1,5 +1,5 @@
 import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager'
-import { type JSX, useEffect, useRef, useState } from 'react'
+import { type JSX, type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { mapKey } from '../input/keyboard'
 import { KEY } from '../input/keycodes'
@@ -37,6 +37,11 @@ interface ScreenViewProps {
 	role: MirrorRole
 	/** Shown above a customer screen, e.g. "Customer screen". */
 	label?: string
+	/** Grid tile: icon-only toolbar, `toolbarStart` at its left. */
+	compact?: boolean
+	toolbarStart?: ReactNode
+	/** Lowers the stream size below the configured one (grid tiles). */
+	maxSize?: number
 }
 
 /**
@@ -48,6 +53,9 @@ export const ScreenView = ({
 	displayId,
 	role,
 	label,
+	compact = false,
+	toolbarStart,
+	maxSize,
 }: ScreenViewProps): JSX.Element => {
 	const hostRef = useRef<HTMLDivElement>(null)
 	const controlRef = useRef<ControlSocket | null>(null)
@@ -166,7 +174,12 @@ export const ScreenView = ({
 				// A mount cancelled meanwhile (StrictMode, fast tab switch) must
 				// not start a server: two main servers could both press POWER.
 				if (!live) return
-				const started = await startMirror(serial, displayId, role)
+				const started = await startMirror(
+					serial,
+					displayId,
+					role,
+					maxSize,
+				)
 				if (!live) {
 					void stopMirror(started.sessionId)
 					return
@@ -396,7 +409,7 @@ export const ScreenView = ({
 			canvas.remove()
 			cleanups.forEach((cleanup) => cleanup())
 		}
-	}, [serial, displayId, role, interactive, attempt])
+	}, [serial, displayId, role, interactive, attempt, maxSize])
 
 	const press = (keycode: number): void => {
 		controlRef.current?.send({
@@ -431,6 +444,12 @@ export const ScreenView = ({
 		setHasFrame(false)
 		setAttempt((n) => n + 1)
 	}
+	const resetVideo = (): void => {
+		controlRef.current?.send({ t: 'resetVideo', force: true })
+	}
+	/** Grid tiles show icons only. */
+	const buttonText = (icon: string, text: string): string =>
+		compact ? icon : `${icon} ${text}`
 
 	return (
 		<div
@@ -439,30 +458,35 @@ export const ScreenView = ({
 			}
 		>
 			{interactive ? (
-				<div className='screen-toolbar'>
+				<div
+					className={
+						compact ? 'screen-toolbar compact' : 'screen-toolbar'
+					}
+				>
+					{toolbarStart}
 					<button
 						onClick={() => press(KEY.BACK)}
 						title='Back (right-click)'
 					>
-						◀ Back
+						{buttonText('◀', 'Back')}
 					</button>
 					<button
 						onClick={() => press(KEY.HOME)}
 						title='Home (middle-click)'
 					>
-						⌂ Home
+						{buttonText('⌂', 'Home')}
 					</button>
 					<button
 						onClick={() => press(KEY.APP_SWITCH)}
 						title='Recents'
 					>
-						▢ Recents
+						{buttonText('▢', 'Recents')}
 					</button>
 					<button
 						onClick={togglePower}
 						title='Screen on/off (never WAKEUP)'
 					>
-						⏻ Power
+						{buttonText('⏻', 'Power')}
 					</button>
 					<button
 						onClick={() => press(KEY.VOLUME_DOWN)}
@@ -477,21 +501,17 @@ export const ScreenView = ({
 						🔊
 					</button>
 					<button
-						onClick={() =>
-							controlRef.current?.send({
-								t: 'resetVideo',
-								force: true,
-							})
-						}
+						onClick={resetVideo}
 						title='Ask for a fresh key frame'
 					>
-						⟳ Reset video
+						{buttonText('⟳', 'Reset video')}
 					</button>
 					<span className='spacer' />
 					{note && <span className='muted'>{note}</span>}
 					<span className='muted'>
-						{size ? `${size.width}×${size.height}` : '…'} · lag{' '}
-						{lag}
+						{compact
+							? `lag ${lag}`
+							: `${size ? `${size.width}×${size.height}` : '…'} · lag ${lag}`}
 						{software && ' · sw'}
 					</span>
 				</div>
