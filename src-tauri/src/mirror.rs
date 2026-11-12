@@ -161,7 +161,8 @@ impl Session {
     /// Validates and queues UI input. The customer session never takes input:
     /// that screen has no touch, and its control socket is only a shutdown handle.
     pub async fn input(&self, input: Input) -> Result<(), String> {
-        if self.role == Role::Customer {
+        // RESET_VIDEO isn't input: the customer viewer may ask for a key frame.
+        if self.role == Role::Customer && !matches!(input, Input::ResetVideo) {
             return Err("the customer screen is view-only".into());
         }
         for message in control::to_controls(input, self.size()).map_err(|e| e.to_string())? {
