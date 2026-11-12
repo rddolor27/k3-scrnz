@@ -7,7 +7,23 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "lint": "eslint .",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check --end-of-line auto",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{md,json,yml,yaml,css,html}": [
+      "prettier --write"
+    ],
+    "*.rs": [
+      "rustfmt --edition 2024"
+    ]
   },
   "dependencies": {
     "@tanstack/react-virtual": "~3.14.26",
@@ -17,11 +33,22 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "~2.12.4",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^6.0.2",
+    "eslint": "^10.14.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-simple-import-sort": "^14.0.0",
+    "eslint-plugin-unused-imports": "^4.4.1",
+    "globals": "^17.14.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
+    "prettier": "3.4.2",
     "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.2",
     "vite": "^8.0.16"
   }
 }
