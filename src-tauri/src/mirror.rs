@@ -127,7 +127,6 @@ impl Session {
         *lock(&self.size)
     }
 
-    /// Resolves when the session ends (stopped or failed).
     pub async fn ended(&self) {
         self.cancel.cancelled().await;
     }

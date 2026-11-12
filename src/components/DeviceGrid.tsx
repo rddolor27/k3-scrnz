@@ -84,8 +84,8 @@ interface DeviceGridProps {
 
 /**
  * Every connected device's main screen in one view, each tile controllable
- * and resizable on its own (user request 2026-11-12, not in SPEC v1).
- * Customer screens, logcat and files stay in the device tabs.
+ * and resizable on its own. Customer screens, logcat and files stay in the
+ * device tabs.
  */
 export const DeviceGrid = ({
 	devices,

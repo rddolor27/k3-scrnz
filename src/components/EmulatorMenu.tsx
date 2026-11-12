@@ -17,8 +17,8 @@ interface EmulatorMenuProps {
 }
 
 /**
- * Lists the SDK's AVDs and boots one headless (user request 2026-11-12, not
- * in SPEC v1). A booted emulator gets a normal, mirrored device tab.
+ * Lists the SDK's AVDs and boots one headless. A booted emulator gets a
+ * normal, mirrored device tab.
  */
 export const EmulatorMenu = ({ onOpen }: EmulatorMenuProps): JSX.Element => {
 	const [open, setOpen] = useState(false)

@@ -58,7 +58,6 @@ export interface LogcatState extends LogView {
 	clear: () => void
 	/** Freezes the display (the stream keeps flowing) or catches up again. */
 	setPaused: (paused: boolean) => void
-	/** Starts the stream again after `error`. */
 	retry: () => void
 }
 

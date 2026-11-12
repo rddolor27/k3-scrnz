@@ -18,7 +18,6 @@ const BACKOFF_MIN: Duration = Duration::from_millis(250);
 const BACKOFF_MAX: Duration = Duration::from_secs(5);
 const PRUNE_EVERY: Duration = Duration::from_secs(1);
 
-/// What the UI renders for one device tab.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceView {
@@ -112,7 +111,6 @@ impl Registry {
         changed
     }
 
-    /// Drops devices that have been gone longer than [`GONE_GRACE`].
     fn prune(&mut self, now: Instant) -> bool {
         let before = self.entries.len();
         self.entries.retain(|serial, entry| {

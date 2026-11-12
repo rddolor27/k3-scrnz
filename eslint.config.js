@@ -14,7 +14,6 @@ export default defineConfig([
 	tseslint.configs.recommended,
 	prettierConfig,
 
-	// Shared rules, as in kulay-pos.
 	{
 		files: ['**/*.{js,mjs,cjs,ts,tsx}'],
 		plugins: {
@@ -38,7 +37,7 @@ export default defineConfig([
 		languageOptions: { globals: globals.node },
 	},
 
-	// App code: the TypeScript rules from .claude/CLAUDE.md (kulay-backend style).
+	// App code: strict TypeScript conventions.
 	{
 		files: ['src/**/*.{ts,tsx}'],
 		extends: [reactHooks.configs.flat['recommended-latest']],
@@ -57,7 +56,7 @@ export default defineConfig([
 				'error',
 				{
 					selector: 'ExportDefaultDeclaration',
-					message: 'Use named exports (.claude/CLAUDE.md).',
+					message: 'Use named exports.',
 				},
 			],
 		},

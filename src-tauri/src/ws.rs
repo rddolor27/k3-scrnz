@@ -28,7 +28,7 @@ use crate::scrcpy::control::Input;
 /// How long a new socket may stay silent before its hello arrives.
 const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// What the UI needs to open sockets. Returned by the `get_endpoint` command.
+/// What the UI needs to open sockets.
 #[derive(Clone, Serialize)]
 pub struct Endpoint {
     pub port: u16,
@@ -43,7 +43,6 @@ struct Hello {
     session_id: Option<String>,
 }
 
-/// Binds the listener and starts accepting connections in the background.
 pub fn start(app: AppHandle) -> std::io::Result<Endpoint> {
     let std_listener = StdTcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
     std_listener.set_nonblocking(true)?;

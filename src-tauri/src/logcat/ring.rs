@@ -74,7 +74,6 @@ impl Ring {
         self.entries.clear();
     }
 
-    /// The `seq` the next pushed entry gets.
     pub fn next_seq(&self) -> u64 {
         self.next_seq
     }

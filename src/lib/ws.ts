@@ -27,7 +27,7 @@ export type LoopbackCheck =
 	| { ok: false; error: string }
 
 /**
- * M0 transport check: authenticates with role "echo", sends a binary probe and
+ * Transport check: authenticates with role "echo", sends a binary probe and
  * waits for the same bytes back. Fails if the page can't reach the loopback
  * port, for example when Chromium's Local Network Access blocks or prompts in
  * a release build.

@@ -15,7 +15,6 @@ const UID_HDR_SIZE: usize = 28;
 /// Past this the stream has lost sync; real headers are 20 to 28 bytes.
 const MAX_HDR_SIZE: usize = 128;
 
-/// One parsed log call.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Record {
     pub pid: i32,

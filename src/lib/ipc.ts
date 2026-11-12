@@ -129,7 +129,7 @@ export interface FileLocation {
 export const listDir = (serial: string, at: FileLocation): Promise<Listing> =>
 	invoke<Listing>('list_dir', { serial, path: at.path, runAs: at.runAs })
 
-/** Saves to Downloads\k3-scrnz\<serial>\ and resolves to the local path. */
+/** Saves to Downloads/k3-scrnz/<serial>/ and resolves to the local path. */
 export const downloadFile = (
 	serial: string,
 	file: FileLocation,
@@ -184,7 +184,6 @@ export const makeDir = (serial: string, at: FileLocation): Promise<void> =>
 export const deletePath = (serial: string, at: FileLocation): Promise<void> =>
 	invoke<void>('delete_path', { serial, path: at.path, runAs: at.runAs })
 
-/** Shows a downloaded file in Windows Explorer. */
 export const revealFile = (path: string): Promise<void> =>
 	invoke<void>('reveal_file', { path })
 

@@ -61,7 +61,6 @@ pub fn run() {
                 Arc::clone(&config),
             ));
             devices::start(Arc::clone(&hub), adb::find_adb());
-            // Feature modules register their state here, before the hub is managed.
             let display_hub = Arc::new(displays::DisplayHub::new(
                 app.handle().clone(),
                 Arc::clone(&hub),

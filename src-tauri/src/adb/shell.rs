@@ -119,7 +119,6 @@ pub async fn shell_spawn(
     Ok(ShellProcess { stream })
 }
 
-/// Runs `cmd` to completion and collects its output.
 pub async fn shell(
     server: &AdbServer,
     sel: &DeviceSel,

@@ -447,7 +447,6 @@ export const ScreenView = ({
 	const resetVideo = (): void => {
 		controlRef.current?.send({ t: 'resetVideo', force: true })
 	}
-	/** Grid tiles show icons only. */
 	const buttonText = (icon: string, text: string): string =>
 		compact ? icon : `${icon} ${text}`
 

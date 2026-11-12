@@ -1,6 +1,4 @@
-//! Device file explorer, like Android Studio's Device Explorer. Added at the
-//! user's request on 2026-11-12; SPEC v1 lists "file manager" as a non-goal
-//! (see `.claude/docs/IMPLEMENTATION_PLAN.md`).
+//! Device file explorer, like Android Studio's Device Explorer.
 //!
 //! Listing runs `find … -exec stat` in the device shell so permission errors
 //! come back as text. Transfers use sync `RECV`/`SEND`. A debuggable app's

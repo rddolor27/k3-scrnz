@@ -23,7 +23,6 @@ impl AdbStream {
         }
     }
 
-    /// The adb transport id of the device this stream belongs to.
     pub fn transport_id(&self) -> u64 {
         self.transport_id
     }

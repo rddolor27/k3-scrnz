@@ -38,7 +38,6 @@ pub enum DisplaysError {
     Adb(#[from] AdbError),
 }
 
-/// One logical display, as the UI sees it (the `DisplayInfo` contract).
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DisplayInfo {
@@ -269,7 +268,6 @@ impl DisplayHub {
         Arc::clone(lock(&self.slots).entry(serial.to_owned()).or_default())
     }
 
-    /// Drops the state of devices whose tab is gone for good.
     fn forget_unlisted(&self, views: &[DeviceView]) {
         let listed: HashSet<&str> = views.iter().map(|d| d.serial.as_str()).collect();
         lock(&self.slots).retain(|serial, _| listed.contains(serial.as_str()));

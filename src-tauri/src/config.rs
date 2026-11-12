@@ -8,7 +8,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// Longest friendly name accepted from the UI.
 const MAX_NAME_LEN: usize = 40;
 /// Kulay POS, the app "only my app" in the logcat panel filters on.
 const DEFAULT_APP_PACKAGE: &str = "pos.kulay.pos";
@@ -20,8 +19,8 @@ pub struct Config {
     /// Friendly tab names by device serial.
     #[serde(default)]
     pub names: BTreeMap<String, String>,
-    /// Keys owned by later milestones (`appPackage`, `mainMaxSize`, ...). Kept
-    /// as-is so saving names never drops them.
+    /// Other keys (`appPackage`, `mainMaxSize`, ...), kept as-is so saving
+    /// names never drops them.
     #[serde(flatten)]
     pub other: serde_json::Map<String, serde_json::Value>,
 }
