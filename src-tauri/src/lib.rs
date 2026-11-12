@@ -2,6 +2,7 @@ pub mod adb;
 mod config;
 mod devices;
 mod displays;
+mod emulator;
 mod files;
 mod logcat;
 mod mirror;
@@ -80,6 +81,7 @@ pub fn run() {
                 Arc::clone(&hub),
             ));
             app.manage(stats::StatsState::new());
+            app.manage(emulator::EmulatorState::new(app.path().app_log_dir().ok()));
             app.manage(Arc::clone(&config));
             app.manage(hub);
             Ok(())
@@ -107,7 +109,17 @@ pub fn run() {
             logcat::clear_logcat,
             logcat::get_logcat_info,
             stats::get_app_stats,
+            emulator::list_avds,
+            emulator::start_emulator,
+            emulator::stop_emulator,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event
+                && let Some(emulators) = app.try_state::<emulator::EmulatorState>()
+            {
+                emulator::shutdown(&emulators);
+            }
+        });
 }

@@ -323,19 +323,23 @@ impl AdbServer {
     }
 }
 
-/// The SDK's adb: `%ANDROID_HOME%`, then `%ANDROID_SDK_ROOT%`, then Android
-/// Studio's default `%LOCALAPPDATA%\Android\Sdk` (SPEC section 5.7). Blocking
-/// (file checks); call it once at startup.
-pub fn find_adb() -> Option<PathBuf> {
-    let sdk_roots = ["ANDROID_HOME", "ANDROID_SDK_ROOT"]
+/// Candidate SDK roots: `%ANDROID_HOME%`, then `%ANDROID_SDK_ROOT%`, then
+/// Android Studio's default `%LOCALAPPDATA%\Android\Sdk` (SPEC section 5.7).
+pub fn sdk_roots() -> impl Iterator<Item = PathBuf> {
+    ["ANDROID_HOME", "ANDROID_SDK_ROOT"]
         .into_iter()
         .filter_map(std::env::var_os)
         .map(PathBuf::from)
         .chain(
             std::env::var_os("LOCALAPPDATA")
                 .map(|dir| PathBuf::from(dir).join("Android").join("Sdk")),
-        );
-    sdk_roots
+        )
+}
+
+/// The SDK's adb (SPEC section 5.7). Blocking (file checks); call it once at
+/// startup.
+pub fn find_adb() -> Option<PathBuf> {
+    sdk_roots()
         .map(|root| root.join("platform-tools").join("adb.exe"))
         .find(|exe| exe.is_file())
 }

@@ -1,11 +1,12 @@
 //! CPU and RAM of the app for the status bar (SPEC section 11): this process
 //! plus everything it spawned, which is where WebView2 decodes and renders.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::ffi::OsStr;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use serde::{Serialize, Serializer};
-use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+use sysinfo::{Pid, Process, ProcessRefreshKind, ProcessesToUpdate, System};
 use tauri::State;
 
 #[derive(Debug, thiserror::Error)]
@@ -32,8 +33,38 @@ pub struct AppStats {
     /// Summed working sets (WebView2's processes share some pages, so this
     /// is an upper bound).
     pub memory_bytes: u64,
-    /// The app process and its descendants.
+    /// The app process and its WebView2 descendants.
     pub processes: u32,
+    /// Emulators this app started are its children too, but counted here
+    /// instead (a booted AVD alone takes 1–3 GB).
+    pub emulator_cpu_percent: f32,
+    pub emulator_memory_bytes: u64,
+}
+
+/// `emulator.exe` and the `qemu-system-*` it runs.
+fn is_emulator(name: &OsStr) -> bool {
+    let name = name.to_string_lossy().to_ascii_lowercase();
+    name.starts_with("emulator") || name.starts_with("qemu-system")
+}
+
+/// `roots` plus every process below them.
+fn descendants(processes: &HashMap<Pid, Process>, roots: HashSet<Pid>) -> HashSet<Pid> {
+    let mut tree = roots;
+    // exe → WebView2 browser → GPU/renderer/utility: a few passes suffice.
+    loop {
+        let before = tree.len();
+        for (pid, process) in processes {
+            if process
+                .parent()
+                .is_some_and(|parent| tree.contains(&parent))
+            {
+                tree.insert(*pid);
+            }
+        }
+        if tree.len() == before {
+            return tree;
+        }
+    }
 }
 
 struct Sampler {
@@ -50,35 +81,46 @@ impl Sampler {
             ProcessRefreshKind::nothing().with_cpu().with_memory(),
         );
         let processes = self.system.processes();
-        // exe → WebView2 browser → GPU/renderer/utility: a few passes suffice.
-        let mut tree = HashSet::from([self.root]);
-        loop {
-            let before = tree.len();
-            for (pid, process) in processes {
-                if process
-                    .parent()
-                    .is_some_and(|parent| tree.contains(&parent))
-                {
-                    tree.insert(*pid);
-                }
+        let tree = descendants(processes, HashSet::from([self.root]));
+        let emulator_roots: HashSet<Pid> = tree
+            .iter()
+            .filter(|pid| processes.get(pid).is_some_and(|p| is_emulator(p.name())))
+            .copied()
+            .collect();
+        let emulators = descendants(processes, emulator_roots);
+        let (mut app, mut emulator) = (Usage::default(), Usage::default());
+        for pid in &tree {
+            if let Some(process) = processes.get(pid) {
+                let usage = if emulators.contains(pid) {
+                    &mut emulator
+                } else {
+                    &mut app
+                };
+                usage.add(process);
             }
-            if tree.len() == before {
-                break;
-            }
-        }
-        let mut cpu = 0.0_f32;
-        let mut memory = 0_u64;
-        let mut count = 0_u32;
-        for process in tree.iter().filter_map(|pid| processes.get(pid)) {
-            cpu += process.cpu_usage();
-            memory += process.memory();
-            count += 1;
         }
         AppStats {
-            cpu_percent: cpu / self.cpus,
-            memory_bytes: memory,
-            processes: count,
+            cpu_percent: app.cpu / self.cpus,
+            memory_bytes: app.memory,
+            processes: app.count,
+            emulator_cpu_percent: emulator.cpu / self.cpus,
+            emulator_memory_bytes: emulator.memory,
         }
+    }
+}
+
+#[derive(Default)]
+struct Usage {
+    cpu: f32,
+    memory: u64,
+    count: u32,
+}
+
+impl Usage {
+    fn add(&mut self, process: &Process) {
+        self.cpu += process.cpu_usage();
+        self.memory += process.memory();
+        self.count += 1;
     }
 }
 
