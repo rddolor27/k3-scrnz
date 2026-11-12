@@ -1,103 +1,105 @@
 import { type JSX, useEffect, useState } from 'react'
 
-import { type Endpoint, getEndpoint } from './lib/ipc'
-import { error, info } from './lib/log'
-import { checkLoopback, type LoopbackCheck } from './lib/ws'
+import { DevicePane } from './components/DevicePane'
+import { DeviceTabs } from './components/DeviceTabs'
+import { StatusBar } from './components/StatusBar'
+import { type AdbStatus, setDeviceName } from './lib/ipc'
+import { error } from './lib/log'
+import { useDevices } from './state/devices'
+import { useLoopbackCheck } from './state/transport'
 
-type Check =
-	| { phase: 'running' }
-	| { phase: 'done'; endpoint: Endpoint; result: LoopbackCheck }
-	| { phase: 'failed'; error: string }
-
-// M0 screen: proves the page can reach the loopback WebSocket (spec section 14, M0).
-// The device tabs replace it in M1.
 export const App = (): JSX.Element => {
-	const [check, setCheck] = useState<Check>({ phase: 'running' })
-	const [run, setRun] = useState(0)
+	const { devices, adb } = useDevices()
+	const loopback = useLoopbackCheck()
+	const [selected, setSelected] = useState<string | null>(null)
+	// Falls back to the first tab when the selected device's tab is removed.
+	const current =
+		devices.find((d) => d.serial === selected) ?? devices[0] ?? null
 
+	// App shortcuts (spec section 9.3): Ctrl+1..9 and Ctrl+(Shift+)Tab. Capture
+	// phase, so they are handled before anything forwards keys to a device.
 	useEffect(() => {
-		let live = true
-		const runCheck = async (): Promise<void> => {
-			try {
-				const endpoint = await getEndpoint()
-				const result = await checkLoopback(endpoint)
-				if (result.ok) {
-					void info(
-						`loopback check ok: ${result.bytes} B echoed in ${result.rttMs.toFixed(1)} ms`,
-					)
-				} else {
-					void error(`loopback check failed: ${result.error}`)
-				}
-				if (live) setCheck({ phase: 'done', endpoint, result })
-			} catch (e) {
-				void error(`loopback check could not run: ${String(e)}`)
-				if (live) setCheck({ phase: 'failed', error: String(e) })
+		const onKeyDown = (e: KeyboardEvent): void => {
+			if (!e.ctrlKey || e.altKey || e.metaKey || devices.length === 0) {
+				return
 			}
+			if (e.target instanceof HTMLInputElement) return
+			if (e.key === 'Tab') {
+				e.preventDefault()
+				const index = devices.findIndex(
+					(d) => d.serial === current?.serial,
+				)
+				const step = e.shiftKey ? -1 : 1
+				const next =
+					devices[(index + step + devices.length) % devices.length]
+				if (next) setSelected(next.serial)
+				return
+			}
+			const digit = /^Digit([1-9])$/.exec(e.code)
+			if (!digit || e.shiftKey) return
+			e.preventDefault()
+			const target = devices[Number(digit[1]) - 1]
+			if (target) setSelected(target.serial)
 		}
-		void runCheck()
-		return (): void => {
-			live = false
-		}
-	}, [run])
+		window.addEventListener('keydown', onKeyDown, { capture: true })
+		return (): void =>
+			window.removeEventListener('keydown', onKeyDown, { capture: true })
+	}, [devices, current])
 
-	const rerun = (): void => {
-		setCheck({ phase: 'running' })
-		setRun((n) => n + 1)
+	const rename = (serial: string, name: string): void => {
+		setDeviceName(serial, name).catch((e: unknown) => {
+			void error(`renaming ${serial} failed: ${String(e)}`)
+		})
 	}
 
 	return (
 		<div className='app'>
 			<header className='topbar'>
 				<span className='brand'>k3.scrnz</span>
-				<span className='tag'>M0 · setup</span>
+				<DeviceTabs
+					devices={devices}
+					selected={current?.serial ?? null}
+					onSelect={setSelected}
+					onRename={rename}
+				/>
 			</header>
-			<main className='center'>
-				<section className='card'>
-					<h1>Loopback WebSocket</h1>
-					<p className='muted'>
-						Video and input use ws://127.0.0.1 (spec section 8.1).
-						This checks that the page can reach it.
-					</p>
-					<dl>
-						<dt>Endpoint</dt>
-						<dd>
-							{check.phase === 'done'
-								? `ws://127.0.0.1:${check.endpoint.port}`
-								: '…'}
-						</dd>
-						<dt>Result</dt>
-						<CheckResult check={check} />
-					</dl>
-					<button
-						disabled={check.phase === 'running'}
-						onClick={rerun}
-					>
-						Run again
-					</button>
-				</section>
+			<main className='content'>
+				{current ? (
+					<DevicePane device={current} />
+				) : (
+					<NoDevices adb={adb} />
+				)}
 			</main>
+			<StatusBar
+				adb={adb}
+				onlineCount={
+					devices.filter((d) => d.state === 'device' && !d.gone)
+						.length
+				}
+				loopback={loopback}
+			/>
 		</div>
 	)
 }
 
-interface CheckResultProps {
-	check: Check
+interface NoDevicesProps {
+	adb: AdbStatus
 }
 
-const CheckResult = ({ check }: CheckResultProps): JSX.Element => {
-	if (check.phase === 'running') return <dd>checking…</dd>
-	if (check.phase === 'failed') return <dd className='err'>{check.error}</dd>
-	const r = check.result
-	if (r.ok) {
-		return (
-			<dd className='ok'>
-				OK · {r.bytes} B echoed in {r.rttMs.toFixed(1)} ms
-			</dd>
-		)
-	}
-	return (
-		<dd className='err'>
-			{r.error}. Switch video to the Channel fallback (spec section 8.1).
-		</dd>
-	)
-}
+const NoDevices = ({ adb }: NoDevicesProps): JSX.Element => (
+	<section className='empty'>
+		{adb.connected ? (
+			<>
+				<h1>No devices</h1>
+				<p className='muted'>
+					Connect a device over USB with USB debugging turned on.
+				</p>
+			</>
+		) : (
+			<>
+				<h1>Waiting for the adb server</h1>
+				<p className='muted'>{adb.error ?? 'Connecting…'}</p>
+			</>
+		)}
+	</section>
+)
