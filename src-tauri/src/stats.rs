@@ -41,7 +41,7 @@ pub struct AppStats {
     pub emulator_memory_bytes: u64,
 }
 
-/// `emulator.exe` and the `qemu-system-*` it runs.
+/// The emulator launcher and the `qemu-system-*` it runs.
 fn is_emulator(name: &OsStr) -> bool {
     let name = name.to_string_lossy().to_ascii_lowercase();
     name.starts_with("emulator") || name.starts_with("qemu-system")

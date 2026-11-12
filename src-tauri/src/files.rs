@@ -641,8 +641,8 @@ pub async fn delete_path(
     Ok(())
 }
 
-/// Shows a downloaded file in Windows Explorer. Only real files under
-/// `Downloads\k3-scrnz` qualify, compared after resolving links and quirks.
+/// Shows a downloaded file in the system file manager. Only real files under
+/// `Downloads/k3-scrnz` qualify, compared after resolving links and quirks.
 #[tauri::command]
 pub fn reveal_file(app: AppHandle, path: String) -> Result<(), FilesError> {
     let refused = || FilesError::Refused("only downloaded files can be shown".into());
@@ -664,17 +664,41 @@ pub fn reveal_file(app: AppHandle, path: String) -> Result<(), FilesError> {
     if !resolved.starts_with(&root) || !resolved.is_file() {
         return Err(refused());
     }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        let explorer = std::env::var_os("SystemRoot")
-            .map(|root| PathBuf::from(root).join("explorer.exe"))
-            .unwrap_or_else(|| PathBuf::from("explorer.exe"));
-        std::process::Command::new(explorer)
-            .raw_arg(format!("/select,\"{}\"", local.display()))
-            .spawn()?;
-    }
+    // Not `resolved`: on Windows it is a `\\?\` path, which Explorer rejects.
+    reveal(&local)?;
     Ok(())
+}
+
+#[cfg(windows)]
+fn reveal(file: &Path) -> std::io::Result<()> {
+    use std::os::windows::process::CommandExt;
+    let explorer = std::env::var_os("SystemRoot")
+        .map(|root| PathBuf::from(root).join("explorer.exe"))
+        .unwrap_or_else(|| PathBuf::from("explorer.exe"));
+    // Explorer parses its own command line: `/select,"path"` must be one raw arg.
+    std::process::Command::new(explorer)
+        .raw_arg(format!("/select,\"{}\"", file.display()))
+        .spawn()
+        .map(drop)
+}
+
+#[cfg(target_os = "macos")]
+fn reveal(file: &Path) -> std::io::Result<()> {
+    std::process::Command::new("open")
+        .arg("-R")
+        .arg(file)
+        .spawn()
+        .map(drop)
+}
+
+/// Linux file managers have no common "select this file", so open its folder.
+#[cfg(not(any(windows, target_os = "macos")))]
+fn reveal(file: &Path) -> std::io::Result<()> {
+    let folder = file.parent().unwrap_or(file);
+    std::process::Command::new("xdg-open")
+        .arg(folder)
+        .spawn()
+        .map(drop)
 }
 
 /// Third-party packages, for opening an app's private data with `run-as`.

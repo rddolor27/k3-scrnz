@@ -218,7 +218,7 @@ pub fn start(hub: Arc<DeviceHub>, adb_exe: Option<PathBuf>) {
             tracing::info!(adb = %exe.display(), "using the SDK adb to start the server when needed")
         }
         None => {
-            tracing::warn!("SDK adb.exe not found; can't start the adb server if it isn't running")
+            tracing::warn!("SDK adb not found; can't start the adb server if it isn't running")
         }
     }
     let tracker_hub = Arc::clone(&hub);

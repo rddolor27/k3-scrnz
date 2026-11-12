@@ -1,12 +1,11 @@
-//! Android emulator launcher (user request 2026-11-12, not in SPEC v1): lists
-//! the SDK's AVDs and boots one headless (`-no-window`). It registers with the
-//! running adb server, so its tab mirrors it like any device. A headless
-//! emulator has no window to close: it is stopped through its console
-//! (`kill`), and k3.scrnz stops the ones it started when it exits.
+//! Android emulator launcher: lists the SDK's AVDs and boots one headless
+//! (`-no-window`). It registers with the running adb server, so its tab
+//! mirrors it like any device. A headless emulator has no window to close: it
+//! is stopped through its console (`kill`), and k3.scrnz stops the ones it
+//! started when it exits.
 
 use std::collections::{HashMap, HashSet};
 use std::net::Ipv4Addr;
-use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Child, Stdio};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -22,6 +21,7 @@ use crate::adb::{AdbServer, DeviceSel, DeviceState};
 use crate::devices::DeviceHub;
 
 /// Windows `CREATE_NO_WINDOW`: no console window for the emulator process.
+#[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const LIST_TIMEOUT: Duration = Duration::from_secs(15);
 /// An emulator that fails (unknown AVD, already running) exits within this.
@@ -36,7 +36,7 @@ const MAX_CONSOLE_PORT: u16 = 5682;
 
 #[derive(Debug, thiserror::Error)]
 pub enum EmulatorError {
-    #[error("the Android emulator isn't installed (SDK emulator\\emulator.exe not found)")]
+    #[error("the Android emulator isn't installed (not found in the SDK's emulator folder)")]
     NotInstalled,
     #[error("invalid AVD name: {0:?}")]
     InvalidName(String),
@@ -98,7 +98,10 @@ impl EmulatorState {
     /// Blocking file checks; call once at startup.
     pub fn new(log_dir: Option<PathBuf>) -> Self {
         let exe = crate::adb::sdk_roots()
-            .map(|root| root.join("emulator").join("emulator.exe"))
+            .map(|root| {
+                root.join("emulator")
+                    .join(crate::adb::executable("emulator"))
+            })
             .find(|exe| exe.is_file());
         match &exe {
             Some(path) => tracing::info!(path = %path.display(), "emulator found"),
@@ -177,16 +180,13 @@ pub async fn list_avds(
 ) -> Result<Vec<Avd>, EmulatorError> {
     let exe = state.exe.clone().ok_or(EmulatorError::NotInstalled)?;
     lock(&state.launched).retain(|_, launched| launched.running());
-    let output = tokio::time::timeout(
-        LIST_TIMEOUT,
-        tokio::process::Command::new(exe)
-            .arg("-list-avds")
-            .stdin(Stdio::null())
-            .creation_flags(CREATE_NO_WINDOW)
-            .output(),
-    )
-    .await
-    .map_err(|_| EmulatorError::Timeout)??;
+    let mut list = tokio::process::Command::new(exe);
+    list.arg("-list-avds").stdin(Stdio::null());
+    #[cfg(windows)]
+    list.creation_flags(CREATE_NO_WINDOW);
+    let output = tokio::time::timeout(LIST_TIMEOUT, list.output())
+        .await
+        .map_err(|_| EmulatorError::Timeout)??;
     let names = parse_avds(&String::from_utf8_lossy(&output.stdout));
 
     let emulators: Vec<String> = hub
@@ -259,7 +259,8 @@ async fn launch(
         None => (Stdio::null(), Stdio::null()),
     };
     let port_arg = port.to_string();
-    let mut child = std::process::Command::new(exe)
+    let mut command = std::process::Command::new(exe);
+    command
         .args([
             "-avd",
             avd,
@@ -272,9 +273,13 @@ async fn launch(
         ])
         .stdin(Stdio::null())
         .stdout(stdout)
-        .stderr(stderr)
-        .creation_flags(CREATE_NO_WINDOW)
-        .spawn()?;
+        .stderr(stderr);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let mut child = command.spawn()?;
     tracing::info!(avd, port, pid = child.id(), "emulator started headless");
 
     let deadline = tokio::time::Instant::now() + EARLY_EXIT;
@@ -421,9 +426,9 @@ async fn read_reply(lines: &mut Lines<BufReader<OwnedReadHalf>>) -> Result<Strin
     Err(EmulatorError::Console(CONSOLE_CLOSED.into()))
 }
 
-/// `%USERPROFILE%\.emulator_console_auth_token`, written by the emulator.
+/// `~/.emulator_console_auth_token`, written by the emulator.
 async fn auth_token() -> Option<String> {
-    let home = std::env::var_os("USERPROFILE")?;
+    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })?;
     let path = PathBuf::from(home).join(".emulator_console_auth_token");
     let token = tokio::fs::read_to_string(path).await.ok()?;
     let token = token.trim();

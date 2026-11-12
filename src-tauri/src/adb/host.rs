@@ -14,6 +14,7 @@ use super::framing::{read_protocol_string, read_status, send_request};
 use super::{AdbError, AdbStream};
 
 /// Windows `CREATE_NO_WINDOW`: no console window flashes up for `adb start-server`.
+#[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// How long to keep retrying `host:version` after starting the server.
 const START_TIMEOUT: Duration = Duration::from_secs(5);
@@ -287,7 +288,7 @@ impl AdbServer {
         .await
     }
 
-    /// Returns the server version, starting the server with the SDK's `adb.exe`
+    /// Returns the server version, starting the server with the SDK's adb
     /// only when nothing is listening. Never spawn a different adb build: a
     /// version mismatch kills the running server (SPEC section 5.7).
     pub async fn ensure_running(&self, adb_exe: &Path) -> Result<u32, AdbError> {
@@ -323,24 +324,41 @@ impl AdbServer {
     }
 }
 
-/// Candidate SDK roots: `%ANDROID_HOME%`, then `%ANDROID_SDK_ROOT%`, then
-/// Android Studio's default `%LOCALAPPDATA%\Android\Sdk` (SPEC section 5.7).
+/// Candidate SDK roots: `ANDROID_HOME`, then `ANDROID_SDK_ROOT`, then Android
+/// Studio's default location (SPEC section 5.7).
 pub fn sdk_roots() -> impl Iterator<Item = PathBuf> {
     ["ANDROID_HOME", "ANDROID_SDK_ROOT"]
         .into_iter()
         .filter_map(std::env::var_os)
         .map(PathBuf::from)
-        .chain(
-            std::env::var_os("LOCALAPPDATA")
-                .map(|dir| PathBuf::from(dir).join("Android").join("Sdk")),
-        )
+        .chain(studio_sdk())
+}
+
+#[cfg(windows)]
+fn studio_sdk() -> Option<PathBuf> {
+    std::env::var_os("LOCALAPPDATA").map(|dir| PathBuf::from(dir).join("Android").join("Sdk"))
+}
+
+#[cfg(target_os = "macos")]
+fn studio_sdk() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Library/Android/sdk"))
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn studio_sdk() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Android/Sdk"))
+}
+
+/// An SDK tool's executable name (`adb.exe` on Windows, `adb` elsewhere).
+pub fn executable(name: &str) -> String {
+    format!("{name}{}", std::env::consts::EXE_SUFFIX)
 }
 
 /// The SDK's adb (SPEC section 5.7). Blocking (file checks); call it once at
 /// startup.
 pub fn find_adb() -> Option<PathBuf> {
     sdk_roots()
-        .map(|root| root.join("platform-tools").join("adb.exe"))
+        .map(|root| root.join("platform-tools").join(executable("adb")))
         .find(|exe| exe.is_file())
 }
 
