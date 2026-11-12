@@ -1,0 +1,81 @@
+name: Release
+
+# A `v*` tag builds every platform and attaches the installers to a draft
+# GitHub Release (publish it by hand). Run it manually to only build them.
+on:
+    push:
+        tags: ['v*']
+    workflow_dispatch:
+
+permissions:
+    contents: write
+
+jobs:
+    build:
+        name: ${{ matrix.name }}
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - name: Windows x64
+                      os: windows-latest
+                      target: x86_64-pc-windows-msvc
+                      bundles: nsis
+                    - name: Windows ARM64
+                      os: windows-latest
+                      target: aarch64-pc-windows-msvc
+                      bundles: nsis
+                    - name: macOS Apple Silicon
+                      os: macos-latest
+                      target: aarch64-apple-darwin
+                      bundles: app,dmg
+                    - name: macOS Intel
+                      os: macos-latest
+                      target: x86_64-apple-darwin
+                      bundles: app,dmg
+                    - name: Linux x64
+                      os: ubuntu-22.04
+                      target: x86_64-unknown-linux-gnu
+                      bundles: deb,rpm,appimage
+                    # GitHub's ARM64 Linux runners are free for public repositories only.
+                    - name: Linux ARM64
+                      os: ubuntu-22.04-arm
+                      target: aarch64-unknown-linux-gnu
+                      bundles: deb,rpm
+        runs-on: ${{ matrix.os }}
+        steps:
+            - uses: actions/checkout@v4
+            - name: Linux dependencies
+              if: runner.os == 'Linux'
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf
+            - uses: pnpm/action-setup@v4
+              with:
+                  version: 10
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: pnpm
+            - run: pnpm install --frozen-lockfile
+            - uses: dtolnay/rust-toolchain@stable
+              with:
+                  targets: ${{ matrix.target }}
+            - uses: Swatinem/rust-cache@v2
+              with:
+                  workspaces: src-tauri
+                  key: ${{ matrix.target }}
+            - uses: tauri-apps/tauri-action@v0
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                  tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+                  releaseName: k3.scrnz ${{ github.ref_name }}
+                  releaseBody: Installers for Windows, macOS and Linux. See the assets below.
+                  releaseDraft: true
+                  args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: k3-scrnz-${{ matrix.target }}
+                  path: src-tauri/target/${{ matrix.target }}/release/bundle/
+                  if-no-files-found: error
