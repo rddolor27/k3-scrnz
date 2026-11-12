@@ -232,6 +232,235 @@ input {
 	text-align: center;
 }
 
+/* Pane view switch */
+
+.pane-wide {
+	display: flex;
+	flex-direction: column;
+	max-width: none;
+	height: 100%;
+}
+
+.views {
+	display: flex;
+	margin-left: auto;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	overflow: hidden;
+}
+
+.views button {
+	padding: 4px 14px;
+	border: 0;
+	background: none;
+	cursor: pointer;
+}
+
+.views button[aria-selected='true'] {
+	background: var(--panel-raised);
+	color: var(--accent);
+}
+
+/* File explorer */
+
+button {
+	cursor: pointer;
+}
+
+.explorer button,
+.explorer input,
+.confirm button {
+	padding: 3px 10px;
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	background: var(--panel-raised);
+}
+
+.explorer button:hover:not(:disabled) {
+	border-color: var(--accent);
+}
+
+.explorer button:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
+.explorer {
+	position: relative;
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 8px;
+	min-height: 0;
+}
+
+.explorer-bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+}
+
+.explorer .path-input {
+	flex: 1;
+	min-width: 240px;
+	font-family: 'Cascadia Mono', Consolas, monospace;
+	font-size: 13px;
+	background: var(--bg);
+}
+
+.app-data {
+	display: flex;
+	gap: 6px;
+}
+
+.app-data input {
+	width: 200px;
+	background: var(--bg);
+}
+
+.spacer {
+	flex: 1;
+}
+
+.confirm {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 12px;
+	border: 1px solid var(--bad);
+	border-radius: 6px;
+	background: var(--panel);
+}
+
+.confirm span {
+	flex: 1;
+}
+
+.explorer button.danger {
+	border-color: var(--bad);
+	color: var(--bad);
+}
+
+code {
+	font-family: 'Cascadia Mono', Consolas, monospace;
+	font-size: 12px;
+}
+
+.file-list {
+	position: relative;
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--panel);
+	outline: none;
+}
+
+.file-list:focus-visible {
+	border-color: var(--accent);
+}
+
+.file-list.loading table {
+	opacity: 0.55;
+}
+
+/* Rows of the previous folder can't be acted on while the next one loads. */
+.file-list.loading tbody {
+	pointer-events: none;
+}
+
+.file-list table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+.file-list th {
+	position: sticky;
+	top: 0;
+	padding: 6px 10px;
+	border-bottom: 1px solid var(--border);
+	background: var(--panel-raised);
+	color: var(--muted);
+	font-size: 12px;
+	font-weight: 500;
+	text-align: left;
+}
+
+.file-list td {
+	padding: 3px 10px;
+	white-space: nowrap;
+}
+
+.file-list tbody tr {
+	cursor: default;
+}
+
+.file-list tbody tr:hover {
+	background: var(--panel-raised);
+}
+
+.file-list tbody tr.selected {
+	background: #1f3354;
+}
+
+.file-list .name {
+	width: 100%;
+	max-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.file-list .icon {
+	margin-right: 8px;
+}
+
+.file-list .num {
+	text-align: right;
+}
+
+.file-list .mode {
+	color: var(--muted);
+	font-family: 'Cascadia Mono', Consolas, monospace;
+	font-size: 12px;
+}
+
+.list-note {
+	padding: 12px;
+}
+
+.drop-overlay {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	border: 2px dashed var(--accent);
+	border-radius: 6px;
+	background: rgb(17 19 23 / 85%);
+	color: var(--accent);
+	font-size: 16px;
+}
+
+.explorer-status {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	min-height: 22px;
+	font-size: 13px;
+	overflow-wrap: anywhere;
+}
+
+.explorer button.link {
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--accent);
+	text-decoration: underline;
+}
+
 /* Status bar */
 
 .statusbar {
