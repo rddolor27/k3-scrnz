@@ -154,6 +154,84 @@ export const revealFile = (path: string): Promise<void> =>
 export const listPackages = (serial: string): Promise<string[]> =>
 	invoke<string[]>('list_packages', { serial })
 
+/** A mirror session's role (spec section 6.1). */
+export type MirrorRole = 'main' | 'customer'
+
+/** src-tauri/src/mirror.rs `Started`. */
+export interface MirrorStarted {
+	sessionId: string
+	width: number
+	height: number
+}
+
+/** `session-state` event payload. */
+export interface SessionState {
+	sessionId: string
+	serial: string
+	state: 'starting' | 'streaming' | 'stopped' | 'error'
+	error: string | null
+}
+
+/** Resolves after the first video session packet (spec section 4). */
+export const startMirror = (
+	serial: string,
+	displayId: number,
+	role: MirrorRole,
+): Promise<MirrorStarted> =>
+	invoke<MirrorStarted>('start_mirror', { serial, displayId, role })
+
+export const stopMirror = (sessionId: string): Promise<void> =>
+	invoke<void>('stop_mirror', { sessionId })
+
+/** Screen power per spec section 6.8; resolves to the new state. */
+export const devicePower = (
+	serial: string,
+	action: 'toggle' | 'wake' | 'sleep',
+): Promise<'Awake' | 'Asleep'> =>
+	invoke<'Awake' | 'Asleep'>('device_power', { serial, action })
+
+export const onSessionState = (
+	handler: (state: SessionState) => void,
+): Promise<UnlistenFn> =>
+	listen<SessionState>('session-state', (event) => handler(event.payload))
+
+export const onDeviceClipboard = (
+	handler: (clip: { serial: string; text: string }) => void,
+): Promise<UnlistenFn> =>
+	listen<{ serial: string; text: string }>('device-clipboard', (event) =>
+		handler(event.payload),
+	)
+
+/** src-tauri/src/displays.rs `DisplayInfo`. */
+export interface DisplayInfo {
+	id: number
+	name: string
+	width: number
+	height: number
+	state: string
+	kind: string
+	uniqueId: string | null
+	owner: string | null
+	flags: string[]
+	touch: string | null
+	customer: boolean
+}
+
+export const getDisplays = (serial: string): Promise<DisplayInfo[]> =>
+	invoke<DisplayInfo[]>('get_displays', { serial })
+
+/** Tells Rust which device's tab is visible, for display polling. */
+export const setVisibleDevice = (serial: string | null): Promise<void> =>
+	invoke<void>('set_visible_device', { serial })
+
+export const onDisplaysChanged = (
+	handler: (change: { serial: string; displays: DisplayInfo[] }) => void,
+): Promise<UnlistenFn> =>
+	listen<{ serial: string; displays: DisplayInfo[] }>(
+		'displays-changed',
+		(event) => handler(event.payload),
+	)
+
 export const onAdbStatus = (
 	handler: (status: AdbStatus) => void,
 ): Promise<UnlistenFn> =>
