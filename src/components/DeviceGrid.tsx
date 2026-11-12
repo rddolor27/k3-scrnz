@@ -1,10 +1,81 @@
-import type { JSX } from 'react'
+import {
+	type JSX,
+	type PointerEvent as ReactPointerEvent,
+	useEffect,
+	useRef,
+	useState,
+} from 'react'
 
 import type { DeviceView } from '../lib/ipc'
 import { ScreenView } from './ScreenView'
 
 /** Tiles stream at most this size: several decoders at 1920 cost too much. */
 const GRID_MAX_SIZE = 1280
+const GAP = 12
+const MIN_W = 280
+const MIN_H = 200
+/** Toolbar and padding above the video in a tile. */
+const TILE_CHROME_H = 44
+const SIZES_KEY = 'k3.gridSizes'
+
+interface Size {
+	w: number
+	h: number
+}
+
+const readSizes = (): Record<string, Size> => {
+	try {
+		const parsed: unknown = JSON.parse(
+			window.localStorage.getItem(SIZES_KEY) ?? '{}',
+		)
+		if (typeof parsed !== 'object' || parsed === null) return {}
+		const sizes: Record<string, Size> = {}
+		for (const [serial, value] of Object.entries(parsed)) {
+			if (
+				typeof value === 'object' &&
+				value !== null &&
+				'w' in value &&
+				'h' in value &&
+				typeof value.w === 'number' &&
+				typeof value.h === 'number'
+			) {
+				sizes[serial] = { w: value.w, h: value.h }
+			}
+		}
+		return sizes
+	} catch {
+		return {}
+	}
+}
+
+const saveSizes = (sizes: Record<string, Size>): void => {
+	try {
+		window.localStorage.setItem(SIZES_KEY, JSON.stringify(sizes))
+	} catch {
+		// Storage can be unavailable; sizes just aren't remembered.
+	}
+}
+
+/**
+ * Size for tiles nobody resized: the column count that gives a 16:9 POS
+ * screen the most room in the visible area.
+ */
+const autoSize = (count: number, box: Size): Size => {
+	let best: Size = { w: MIN_W, h: MIN_H }
+	let bestArea = 0
+	for (let cols = 1; cols <= Math.max(1, count); cols += 1) {
+		const rows = Math.ceil(count / cols)
+		const w = Math.max(MIN_W, Math.floor((box.w - GAP * (cols - 1)) / cols))
+		const h = Math.max(MIN_H, Math.floor((box.h - GAP * (rows - 1)) / rows))
+		const scale = Math.min(w / 16, (h - TILE_CHROME_H) / 9)
+		const area = scale * scale
+		if (area > bestArea) {
+			bestArea = area
+			best = { w, h }
+		}
+	}
+	return best
+}
 
 interface DeviceGridProps {
 	devices: DeviceView[]
@@ -12,18 +83,88 @@ interface DeviceGridProps {
 }
 
 /**
- * Every connected POS's main screen in one view, each tile controllable
- * (user request 2026-11-12, not in SPEC v1). Customer screens, logcat and
- * files stay in the device tabs.
+ * Every connected device's main screen in one view, each tile controllable
+ * and resizable on its own (user request 2026-11-12, not in SPEC v1).
+ * Customer screens, logcat and files stay in the device tabs.
  */
 export const DeviceGrid = ({
 	devices,
 	onOpen,
 }: DeviceGridProps): JSX.Element => {
+	const gridRef = useRef<HTMLDivElement>(null)
+	const [box, setBox] = useState<Size>({ w: 960, h: 600 })
+	const [sizes, setSizes] = useState<Record<string, Size>>(readSizes)
+
+	useEffect(() => {
+		const grid = gridRef.current
+		if (!grid) return
+		const observer = new ResizeObserver(() => {
+			setBox({ w: grid.clientWidth, h: grid.clientHeight })
+		})
+		observer.observe(grid)
+		return (): void => observer.disconnect()
+	}, [])
+
+	const auto = autoSize(devices.length, box)
+
+	const startResize = (
+		serial: string,
+		e: ReactPointerEvent<HTMLDivElement>,
+	): void => {
+		const tile = e.currentTarget.parentElement
+		if (!tile) return
+		e.preventDefault()
+		e.currentTarget.setPointerCapture(e.pointerId)
+		const rect = tile.getBoundingClientRect()
+		const start = {
+			x: e.clientX,
+			y: e.clientY,
+			w: rect.width,
+			h: rect.height,
+		}
+		const maxW = Math.max(MIN_W, box.w)
+		let next: Size = { w: rect.width, h: rect.height }
+		const onMove = (ev: PointerEvent): void => {
+			next = {
+				w: Math.round(
+					Math.min(
+						maxW,
+						Math.max(MIN_W, start.w + ev.clientX - start.x),
+					),
+				),
+				h: Math.round(Math.max(MIN_H, start.h + ev.clientY - start.y)),
+			}
+			setSizes((all) => ({ ...all, [serial]: next }))
+		}
+		const onUp = (): void => {
+			window.removeEventListener('pointermove', onMove)
+			window.removeEventListener('pointerup', onUp)
+			window.removeEventListener('pointercancel', onUp)
+			setSizes((all) => {
+				const saved = { ...all, [serial]: next }
+				saveSizes(saved)
+				return saved
+			})
+		}
+		window.addEventListener('pointermove', onMove)
+		window.addEventListener('pointerup', onUp)
+		window.addEventListener('pointercancel', onUp)
+	}
+
+	const resetSize = (serial: string): void => {
+		setSizes((all) => {
+			const rest = Object.fromEntries(
+				Object.entries(all).filter(([key]) => key !== serial),
+			)
+			saveSizes(rest)
+			return rest
+		})
+	}
+
 	if (devices.length === 0) {
 		return (
 			<section className='empty'>
-				<h1>No POS devices</h1>
+				<h1>No devices</h1>
 				<p className='muted'>
 					Each connected device shows up here as a tile.
 				</p>
@@ -31,27 +172,40 @@ export const DeviceGrid = ({
 		)
 	}
 	return (
-		<div className='device-grid'>
-			{devices.map((device) => (
-				<div className='grid-tile' key={device.serial}>
-					<ScreenView
-						serial={device.serial}
-						displayId={0}
-						role='main'
-						compact
-						maxSize={GRID_MAX_SIZE}
-						toolbarStart={
-							<button
-								className='tile-name'
-								onClick={() => onOpen(device.serial)}
-								title={`${device.serial} · open its tab`}
-							>
-								{device.name}
-							</button>
-						}
-					/>
-				</div>
-			))}
+		<div className='device-grid' ref={gridRef}>
+			{devices.map((device) => {
+				const size = sizes[device.serial] ?? auto
+				return (
+					<div
+						className='grid-tile'
+						key={device.serial}
+						style={{ width: size.w, height: size.h }}
+					>
+						<ScreenView
+							serial={device.serial}
+							displayId={0}
+							role='main'
+							compact
+							maxSize={GRID_MAX_SIZE}
+							toolbarStart={
+								<button
+									className='tile-name'
+									onClick={() => onOpen(device.serial)}
+									title={`${device.serial} · open its tab`}
+								>
+									{device.name}
+								</button>
+							}
+						/>
+						<div
+							className='tile-resize'
+							title='Drag to resize · double-click to reset'
+							onPointerDown={(e) => startResize(device.serial, e)}
+							onDoubleClick={() => resetSize(device.serial)}
+						/>
+					</div>
+				)
+			})}
 		</div>
 	)
 }

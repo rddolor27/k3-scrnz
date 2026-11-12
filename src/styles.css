@@ -145,6 +145,8 @@ input {
 .content {
 	min-height: 0;
 	overflow: auto;
+	/* A scrollbar appearing (a tile resized bigger) must not shift the grid. */
+	scrollbar-gutter: stable;
 	padding: 12px 16px;
 }
 
@@ -281,21 +283,51 @@ input {
 /* All-devices grid */
 
 .device-grid {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
-	grid-auto-rows: minmax(260px, 1fr);
+	display: flex;
+	flex-wrap: wrap;
+	align-content: flex-start;
 	gap: 12px;
 	height: 100%;
 }
 
 .grid-tile {
+	position: relative;
 	display: flex;
+	flex: none;
+	box-sizing: border-box;
 	min-width: 0;
 	min-height: 0;
 	padding: 8px;
 	border: 1px solid var(--border);
 	border-radius: 8px;
 	background: var(--panel);
+}
+
+.tile-resize {
+	position: absolute;
+	right: 1px;
+	bottom: 1px;
+	width: 16px;
+	height: 16px;
+	border-bottom-right-radius: 7px;
+	background: linear-gradient(
+		135deg,
+		transparent 55%,
+		var(--muted) 55%,
+		var(--muted) 62%,
+		transparent 62%,
+		transparent 72%,
+		var(--muted) 72%,
+		var(--muted) 79%,
+		transparent 79%
+	);
+	cursor: nwse-resize;
+	opacity: 0.6;
+	touch-action: none;
+}
+
+.tile-resize:hover {
+	opacity: 1;
 }
 
 .screen-toolbar.compact {
