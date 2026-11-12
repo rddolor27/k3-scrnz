@@ -1,11 +1,7 @@
-//! Server → client device messages on the control stream (SPEC section 6.5).
-//! Parsed as a stream; an unknown id is a fatal protocol error.
-
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 use super::ScrcpyError;
 
-/// The server caps clipboard text well below this.
 const MAX_CLIPBOARD: usize = 1024 * 1024;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -15,7 +11,7 @@ pub enum DeviceMessage {
     UhidOutput,
 }
 
-/// Reads one message. Not cancel-safe: run it on its own task.
+/// Not cancel-safe: run it on its own task.
 pub async fn read_message<R: AsyncRead + Unpin>(r: &mut R) -> Result<DeviceMessage, ScrcpyError> {
     match r.read_u8().await? {
         0 => {

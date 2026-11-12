@@ -1,5 +1,3 @@
-/* Logcat panel (spec section 10.3, 11). Fills the height of its container. */
-
 .logcat {
 	display: flex;
 	flex-direction: column;
@@ -124,8 +122,6 @@
 	margin: 0;
 }
 
-/* List */
-
 .log-list {
 	display: flex;
 	flex: 1;
@@ -201,8 +197,6 @@
 	font-weight: 700;
 }
 
-/* Colour by level; the row's own colour is the level colour. */
-
 .lv-v {
 	color: var(--idle);
 }
@@ -248,8 +242,6 @@
 	box-shadow: 0 2px 8px rgb(0 0 0 / 40%);
 	color: var(--accent);
 }
-
-/* Details strip */
 
 .log-detail {
 	flex: none;

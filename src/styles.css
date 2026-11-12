@@ -41,8 +41,6 @@ input {
 	height: 100%;
 }
 
-/* Top bar with device tabs */
-
 .topbar {
 	display: flex;
 	align-items: stretch;
@@ -140,12 +138,10 @@ input {
 	background: var(--bad);
 }
 
-/* Main area */
-
 .content {
 	min-height: 0;
 	overflow: auto;
-	/* A scrollbar appearing (a tile resized bigger) must not shift the grid. */
+	/* Stops tiles shifting when a scrollbar appears. */
 	scrollbar-gutter: stable;
 	padding: 12px 16px;
 }
@@ -234,8 +230,6 @@ input {
 	text-align: center;
 }
 
-/* Device panes (hidden ones stay mounted for a while, see App) */
-
 .pane-slot {
 	display: flex;
 	flex-direction: column;
@@ -250,8 +244,6 @@ input {
 .pane-header .tab-serial {
 	margin-left: -4px;
 }
-
-/* Screen layout: main + customer on top, logcat below */
 
 .device-layout {
 	display: grid;
@@ -279,8 +271,6 @@ input {
 .screen-main {
 	flex: 1;
 }
-
-/* All-devices grid */
 
 .device-grid {
 	display: flex;
@@ -353,8 +343,6 @@ input {
 .tab-grid {
 	font-weight: 600;
 }
-
-/* Emulator menu */
 
 .emulator-menu {
 	position: relative;
@@ -546,8 +534,6 @@ input {
 	overflow: hidden;
 }
 
-/* Pane view switch */
-
 .pane-wide {
 	display: flex;
 	flex-direction: column;
@@ -574,8 +560,6 @@ input {
 	background: var(--panel-raised);
 	color: var(--accent);
 }
-
-/* File explorer */
 
 button {
 	cursor: pointer;
@@ -681,7 +665,6 @@ code {
 	opacity: 0.55;
 }
 
-/* Rows of the previous folder can't be acted on while the next one loads. */
 .file-list.loading tbody {
 	pointer-events: none;
 }
@@ -774,8 +757,6 @@ code {
 	color: var(--accent);
 	text-decoration: underline;
 }
-
-/* Status bar */
 
 .statusbar {
 	display: flex;

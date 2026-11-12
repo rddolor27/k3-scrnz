@@ -1,4 +1,3 @@
-/** `KeyboardEvent.code` → Android keycode (spec Appendix B). */
 export const KEYCODE: Readonly<Record<string, number>> = {
 	Digit0: 7,
 	Digit1: 8,
@@ -120,7 +119,7 @@ export const KEYCODE: Readonly<Record<string, number>> = {
 	BrowserSearch: 84,
 }
 
-/** Toolbar keys. POWER goes through `device_power`; WAKEUP (224) is forbidden. */
+// POWER goes through `device_power`; never WAKEUP (224).
 export const KEY = {
 	HOME: 3,
 	BACK: 4,
@@ -129,7 +128,6 @@ export const KEY = {
 	APP_SWITCH: 187,
 } as const
 
-/** Android meta-state flags. */
 export const META = {
 	SHIFT_ON: 0x1,
 	ALT_ON: 0x2,

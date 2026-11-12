@@ -18,10 +18,7 @@ export interface DevicesState {
 
 const NO_STATUS: AdbStatus = { connected: false, version: null, error: null }
 
-/**
- * Live device list and adb server status. Subscribes to the Rust events first,
- * then fetches the current state; a snapshot never overwrites a newer event.
- */
+// Subscribe first, then fetch: a snapshot never overwrites a newer event.
 export const useDevices = (): DevicesState => {
 	const [devices, setDevices] = useState<DeviceView[]>([])
 	const [adb, setAdb] = useState<AdbStatus>(NO_STATUS)

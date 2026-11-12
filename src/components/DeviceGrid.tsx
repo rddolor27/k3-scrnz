@@ -9,12 +9,10 @@ import {
 import type { DeviceView } from '../lib/ipc'
 import { ScreenView } from './ScreenView'
 
-/** Tiles stream at most this size: several decoders at 1920 cost too much. */
 const GRID_MAX_SIZE = 1280
 const GAP = 12
 const MIN_W = 280
 const MIN_H = 200
-/** Toolbar and padding above the video in a tile. */
 const TILE_CHROME_H = 44
 const SIZES_KEY = 'k3.gridSizes'
 
@@ -52,14 +50,10 @@ const saveSizes = (sizes: Record<string, Size>): void => {
 	try {
 		window.localStorage.setItem(SIZES_KEY, JSON.stringify(sizes))
 	} catch {
-		// Storage can be unavailable; sizes just aren't remembered.
+		// Storage can be unavailable.
 	}
 }
 
-/**
- * Size for tiles nobody resized: the column count that gives a 16:9 POS
- * screen the most room in the visible area.
- */
 const autoSize = (count: number, box: Size): Size => {
 	let best: Size = { w: MIN_W, h: MIN_H }
 	let bestArea = 0
@@ -82,11 +76,6 @@ interface DeviceGridProps {
 	onOpen: (serial: string) => void
 }
 
-/**
- * Every connected device's main screen in one view, each tile controllable
- * and resizable on its own. Customer screens, logcat and files stay in the
- * device tabs.
- */
 export const DeviceGrid = ({
 	devices,
 	onOpen,

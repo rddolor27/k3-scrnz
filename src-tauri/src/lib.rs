@@ -18,10 +18,6 @@ use tauri::plugin::TauriPlugin;
 use tauri_plugin_log::log::LevelFilter;
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
-/// Rust code logs with `tracing`; its `log` feature forwards every event to this
-/// plugin, which writes them to stdout and a rotating file in the app log dir
-/// (`%LOCALAPPDATA%\<identifier>\logs\k3-scrnz.log`). The webview logs through
-/// the same plugin (`src/lib/log.ts`).
 fn log_plugin<R: tauri::Runtime>() -> TauriPlugin<R> {
     let level = if cfg!(debug_assertions) {
         LevelFilter::Debug

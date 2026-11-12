@@ -1,18 +1,12 @@
-//! Per-device ring of parsed entries (SPEC section 10.2).
-
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 
 use super::binary::Record;
 
-/// Distinct tags kept for sharing. Past this the table starts over (entries
-/// keep the `Arc`s they already hold), so a tag that embeds a pid or an id
-/// can't grow it without bound.
 const MAX_TAGS: usize = 4096;
 
 #[derive(Debug)]
 pub struct LogEntry {
-    /// Monotonic per device, starting at 1; survives [`Ring::clear`].
     pub seq: u64,
     pub sec: u32,
     pub nsec: u32,
@@ -25,7 +19,6 @@ pub struct LogEntry {
 }
 
 impl LogEntry {
-    /// Milliseconds since the epoch, as the UI shows them.
     pub fn ts_ms(&self) -> u64 {
         u64::from(self.sec) * 1000 + u64::from(self.nsec / 1_000_000)
     }
@@ -49,7 +42,6 @@ impl Ring {
         }
     }
 
-    /// Appends an entry, dropping the oldest one when the ring is full.
     pub fn push(&mut self, record: Record) {
         if self.entries.len() >= self.capacity {
             self.entries.pop_front();
@@ -69,7 +61,7 @@ impl Ring {
         self.entries.push_back(entry);
     }
 
-    /// Empties the ring. Sequence numbers keep counting.
+    /// Sequence numbers keep counting.
     pub fn clear(&mut self) {
         self.entries.clear();
     }
@@ -78,13 +70,11 @@ impl Ring {
         self.next_seq
     }
 
-    /// Oldest to newest.
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = &LogEntry> {
         self.entries.iter()
     }
 
-    /// Entries with `seq >= from`, oldest first. Sequence numbers are
-    /// contiguous in the ring, so this is a slice, not a scan.
+    /// Sequence numbers are contiguous in the ring, so this is a slice, not a scan.
     pub fn since(&self, from: u64) -> impl Iterator<Item = &LogEntry> {
         let first = self.entries.front().map_or(self.next_seq, |e| e.seq);
         let skip = usize::try_from(from.saturating_sub(first)).unwrap_or(usize::MAX);

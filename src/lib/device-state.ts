@@ -1,6 +1,5 @@
 import type { DeviceView } from './ipc'
 
-/** Dot colour (spec section 11): green, amber, red, grey. */
 export type Tone = 'ok' | 'wait' | 'bad' | 'idle'
 
 type StateFields = Pick<DeviceView, 'state' | 'gone'>
@@ -22,13 +21,11 @@ export const stateTone = ({ state, gone }: StateFields): Tone => {
 	}
 }
 
-/** Short label next to the tab name; none when the device is online. */
 export const stateLabel = ({ state, gone }: StateFields): string | null => {
 	if (gone) return 'disconnected'
 	return state === 'device' ? null : state
 }
 
-/** What the user should do about the current state, if anything. */
 export const stateHint = ({ state, gone }: StateFields): string | null => {
 	if (gone) {
 		return 'Disconnected. This tab closes shortly unless the device comes back.'

@@ -5,10 +5,6 @@ import { type DisplayInfo, getDisplays, onDisplaysChanged } from '../lib/ipc'
 import { error } from '../lib/log'
 import { ScreenView } from './ScreenView'
 
-/**
- * Detected customer screens of a device (spec section 7). Rust polls the
- * visible device (App tells it which one) and emits `displays-changed`.
- */
 export const useCustomerDisplays = (serial: string): DisplayInfo[] => {
 	const [displays, setDisplays] = useState<DisplayInfo[]>([])
 
@@ -46,7 +42,6 @@ interface CustomerScreensProps {
 	displays: DisplayInfo[]
 }
 
-/** View-only live views of the customer screens; hidden when there are none. */
 export const CustomerScreens = ({
 	serial,
 	displays,

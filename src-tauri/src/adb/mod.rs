@@ -1,9 +1,3 @@
-//! Hand-rolled async client for the adb server protocol (SPEC section 5).
-//!
-//! Talks to the adb server that is already running on `127.0.0.1:5037` (Android
-//! Studio's). It never spawns adb per command, and only starts the server with
-//! the SDK's own adb when nothing is listening (section 5.7).
-
 mod error;
 mod framing;
 mod host;

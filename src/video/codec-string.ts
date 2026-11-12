@@ -1,8 +1,4 @@
-/**
- * `avc1.PPCCLL` from an Annex-B config packet: the three bytes after the SPS
- * NAL header (spec section 8.2). The Gemini gives `avc1.64002A` for the main
- * screen and `avc1.640028` for the customer screen (spec section 13).
- */
+// `avc1.PPCCLL`: the three bytes after the SPS NAL header of the Annex-B config.
 export const avcCodecString = (config: Uint8Array): string | null => {
 	let i = 0
 	while (i + 4 < config.length) {

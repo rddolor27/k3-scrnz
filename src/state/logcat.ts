@@ -14,12 +14,9 @@ import {
 	startLogcat,
 } from '../lib/logcat'
 
-/** Rows kept in the webview; matches the Rust ring (spec section 10.2). */
 export const MAX_ROWS = 50_000
-/** Rows dropped at once when the cap is passed, so the splice cost is amortised. */
 export const TRIM_CHUNK = 5_000
 
-/** The live rows, mutated in place by every batch. React sees a `LogView`. */
 interface LogBuffer {
 	rows: LogRow[]
 	version: number
@@ -28,35 +25,22 @@ interface LogBuffer {
 	skipped: number
 }
 
-/**
- * What the panel renders. While streaming, `rows` is the live array (mutated
- * in place), so `version` is the only change signal. While paused it is a copy.
- */
+// `rows` is mutated in place while streaming; only `version` signals change.
 export interface LogView {
 	rows: readonly LogRow[]
-	/** Bumped once per applied batch, so React renders at most ~10 times a second. */
 	version: number
-	/** Rows dropped from the top since the session began. Only ever grows. */
 	trimmed: number
-	/** Bumped by every `reset` batch (filter change, clear, reconnect). */
 	epoch: number
-	/** Rows the flood guard dropped since the last reset. */
 	skipped: number
 }
 
 export interface LogcatState extends LogView {
 	paused: boolean
-	/** The app behind "Only my app"; null until `get_logcat_info` answers. */
 	info: LogcatInfo | null
-	/** Why the stream couldn't start; null while it runs. */
 	error: string | null
-	/** Rust's rejection of the last filter (e.g. a bad regex); null when applied. */
 	filterError: string | null
-	/** Sends the filter to Rust, which answers with a `reset` batch. */
 	setFilter: (filter: LogFilter) => void
-	/** Empties the local buffer only; never touches the device. */
 	clear: () => void
-	/** Freezes the display (the stream keeps flowing) or catches up again. */
 	setPaused: (paused: boolean) => void
 	retry: () => void
 }
@@ -89,7 +73,6 @@ const newSession = (serial: string): Session => ({
 	filterError: null,
 })
 
-/** Late callbacks of an earlier device must not touch the current session. */
 const patchSession =
 	(serial: string, patch: SessionPatch) =>
 	(prev: Session): Session =>
@@ -111,13 +94,11 @@ const viewOf = (buffer: LogBuffer): LogView => ({
 	skipped: buffer.skipped,
 })
 
-/** A frozen copy for pause: later batches can't change or shift it. */
 const snapshotOf = (buffer: LogBuffer): LogView => ({
 	...viewOf(buffer),
 	rows: buffer.rows.slice(),
 })
 
-/** Drops whole chunks from the top once the cap is passed. */
 const trimBuffer = (buffer: LogBuffer): void => {
 	const excess = buffer.rows.length - MAX_ROWS
 	if (excess <= 0) return
@@ -139,7 +120,6 @@ const applyBatch = (buffer: LogBuffer, batch: LogBatch): void => {
 	buffer.version += 1
 }
 
-/** A reset replaces the display and ends a pause; an append is held while paused. */
 const receiveBatch = (
 	prev: Session,
 	view: LogView,
@@ -149,20 +129,13 @@ const receiveBatch = (
 	return prev.paused ? prev : { ...prev, view }
 }
 
-/**
- * The logcat stream of one device (spec section 10.3). Rows live in a plain
- * array outside React state; one `version` bump per batch drives the render.
- * Switching `serial` drops the old session and ignores its late messages.
- */
 export const useLogcat = (serial: string): LogcatState => {
 	const [session, setSession] = useState<Session>(() => newSession(serial))
 	const [attempt, setAttempt] = useState(0)
 	const bufferRef = useRef<LogBuffer | null>(null)
-	// Last filter Rust accepted, replayed on every start so both sides agree.
 	const appliedFilter = useRef<LogFilter>(DEFAULT_LOG_FILTER)
 	const filterRequest = useRef(0)
 
-	// A new device starts from a blank session (state adjusted during render).
 	const current = session.serial === serial ? session : newSession(serial)
 	if (current !== session) setSession(current)
 
@@ -170,8 +143,7 @@ export const useLogcat = (serial: string): LogcatState => {
 		let live = true
 		const buffer = createBuffer()
 		bufferRef.current = buffer
-		// Rust looks the app's uid up in the background and sends a `reset` when
-		// it lands, so the info is fetched again on resets until it is known.
+		// Rust resolves the uid later and sends a `reset`: refetch until known.
 		let uidKnown = false
 		const refreshInfo = (): void => {
 			getLogcatInfo(serial)
@@ -199,7 +171,7 @@ export const useLogcat = (serial: string): LogcatState => {
 		const begin = async (): Promise<void> => {
 			await startLogcat(serial, channel)
 			try {
-				// start_logcat is idempotent and may find a filter from an earlier mount.
+				// start_logcat may keep an earlier mount's filter; reapply ours.
 				await setLogcatFilter(serial, appliedFilter.current)
 			} catch (e) {
 				void warn(`logcat: restoring the filter failed: ${String(e)}`)
@@ -227,7 +199,6 @@ export const useLogcat = (serial: string): LogcatState => {
 				setSession(patchSession(serial, { filterError: null }))
 			})
 			.catch((e: unknown) => {
-				// Only the latest request decides what the user sees.
 				if (request !== filterRequest.current) return
 				setSession(patchSession(serial, { filterError: String(e) }))
 			})

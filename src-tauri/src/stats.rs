@@ -1,6 +1,3 @@
-//! CPU and RAM of the app for the status bar (SPEC section 11): this process
-//! plus everything it spawned, which is where WebView2 decodes and renders.
-
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -17,7 +14,6 @@ pub enum StatsError {
     Task(String),
 }
 
-/// Tauri sends command errors to the UI as their message.
 impl Serialize for StatsError {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_str(&self.to_string())
@@ -27,30 +23,20 @@ impl Serialize for StatsError {
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppStats {
-    /// Share of the whole machine (all logical CPUs), 0–100. The first sample
-    /// reads 0: CPU usage is a difference between two refreshes.
     pub cpu_percent: f32,
-    /// Summed working sets (WebView2's processes share some pages, so this
-    /// is an upper bound).
     pub memory_bytes: u64,
-    /// The app process and its WebView2 descendants.
     pub processes: u32,
-    /// Emulators this app started are its children too, but counted here
-    /// instead (a booted AVD alone takes 1–3 GB).
     pub emulator_cpu_percent: f32,
     pub emulator_memory_bytes: u64,
 }
 
-/// The emulator launcher and the `qemu-system-*` it runs.
 fn is_emulator(name: &OsStr) -> bool {
     let name = name.to_string_lossy().to_ascii_lowercase();
     name.starts_with("emulator") || name.starts_with("qemu-system")
 }
 
-/// `roots` plus every process below them.
 fn descendants(processes: &HashMap<Pid, Process>, roots: HashSet<Pid>) -> HashSet<Pid> {
     let mut tree = roots;
-    // exe → WebView2 browser → GPU/renderer/utility: a few passes suffice.
     loop {
         let before = tree.len();
         for (pid, process) in processes {
@@ -156,7 +142,6 @@ impl StatsState {
     }
 }
 
-/// Polled by the status bar every 2 s while the window is visible.
 #[tauri::command]
 pub async fn get_app_stats(state: State<'_, StatsState>) -> Result<AppStats, StatsError> {
     let Some(sampler) = state.sampler.as_ref().map(Arc::clone) else {
@@ -164,7 +149,6 @@ pub async fn get_app_stats(state: State<'_, StatsState>) -> Result<AppStats, Sta
             state.error.clone().unwrap_or_default(),
         ));
     };
-    // Refreshing every process is a blocking system call.
     tokio::task::spawn_blocking(move || {
         sampler
             .lock()

@@ -8,12 +8,10 @@ interface DeviceTabsProps {
 	selected: string | null
 	onSelect: (serial: string) => void
 	onRename: (serial: string, name: string) => void
-	/** The "All devices" tab; hidden when `null`. */
 	onSelectGrid: (() => void) | null
 	gridSelected: boolean
 }
 
-/** One tab per device (spec section 11). Double-click a tab to rename it. */
 export const DeviceTabs = ({
 	devices,
 	selected,
@@ -22,8 +20,8 @@ export const DeviceTabs = ({
 	onSelectGrid,
 	gridSelected,
 }: DeviceTabsProps): JSX.Element => {
-	// Keyed by transport id too: a device that is removed mid-rename comes back
-	// with a new transport id, so the input doesn't pop up again.
+	// Keyed by transport id too: a device removed mid-rename comes back with a
+	// new one, so the input doesn't pop up again.
 	const [editing, setEditing] = useState<{
 		serial: string
 		transportId: number
@@ -94,7 +92,6 @@ export const DeviceTabs = ({
 
 interface RenameInputProps {
 	initial: string
-	/** `null` when cancelled. An empty name resets to the model name. */
 	onDone: (name: string | null) => void
 }
 

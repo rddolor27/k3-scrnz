@@ -1,22 +1,15 @@
-//! `sync:` file push (SPEC section 5.5) and pull. Every integer is little-endian
-//! and the ids are literal ASCII.
-
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use super::{AdbError, AdbServer, DeviceSel};
 
-/// Regular file, 0644 (`0o100644`), sent in decimal as adb does.
+/// Sent in decimal in the `SEND` target, as adb does.
 pub const MODE_FILE_0644: u32 = 0o100_644;
-/// adbd's `SYNC_DATA_MAX`.
 const DATA_MAX: usize = 64 * 1024;
-/// adbd rejects longer paths with "path too long".
 const PATH_MAX: usize = 1024;
-/// A pull that receives nothing for this long is stuck.
 const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// `SEND` + `"<remote>,<mode>"`, `DATA` chunks of at most 64 KiB, `DONE` + mtime.
 fn encode_send(bytes: &[u8], remote: &str, mode: u32, mtime: u32) -> Result<Vec<u8>, AdbError> {
     // adbd's limit applies to the whole "<remote>,<mode>" string.
     let target = format!("{remote},{mode}");
@@ -42,7 +35,6 @@ fn len_u32(len: usize) -> Result<u32, AdbError> {
     u32::try_from(len).map_err(|_| AdbError::Sync("length exceeds u32".into()))
 }
 
-/// `OKAY` + `00000000`, or `FAIL` + u32 length + message.
 async fn read_status<R: AsyncRead + Unpin>(r: &mut R) -> Result<(), AdbError> {
     let mut header = [0u8; 8];
     r.read_exact(&mut header).await?;
@@ -62,7 +54,6 @@ async fn read_status<R: AsyncRead + Unpin>(r: &mut R) -> Result<(), AdbError> {
     }
 }
 
-/// Pushes `bytes` to `remote` on the device and ends the sync session with `QUIT`.
 pub async fn push(
     server: &AdbServer,
     sel: &DeviceSel,
@@ -82,8 +73,6 @@ pub async fn push(
     Ok(())
 }
 
-/// Pulls `remote` from the device into `out` (`RECV` v1: `DATA` chunks of at
-/// most 64 KiB, then an 8-byte `DONE`, or `FAIL` + message). Returns the size.
 pub async fn pull<W: AsyncWrite + Unpin>(
     server: &AdbServer,
     sel: &DeviceSel,
@@ -127,14 +116,12 @@ pub async fn pull<W: AsyncWrite + Unpin>(
             }
         }
     }
-    // The file is complete; a failed QUIT changes nothing.
     let _ = stream.write_all(b"QUIT\0\0\0\0").await;
     out.flush().await?;
     Ok(total)
 }
 
-/// `read_exact` that fails when the device sends nothing for [`IDLE_TIMEOUT`]
-/// (a hung FUSE read), and reports EOF as the stream closing.
+/// A hung FUSE read on the device sends nothing, hence the idle timeout.
 async fn read_within<R: AsyncRead + Unpin>(r: &mut R, buf: &mut [u8]) -> Result<(), AdbError> {
     match tokio::time::timeout(IDLE_TIMEOUT, r.read_exact(buf)).await {
         Err(_) => Err(AdbError::Timeout),

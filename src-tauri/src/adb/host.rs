@@ -1,5 +1,3 @@
-//! Host services (SPEC section 5.2), device-service open (5.3) and server bootstrap (5.7).
-
 use std::collections::HashSet;
 use std::fmt;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -13,15 +11,12 @@ use tokio::net::TcpStream;
 use super::framing::{read_protocol_string, read_status, send_request};
 use super::{AdbError, AdbStream};
 
-/// Windows `CREATE_NO_WINDOW`: no console window flashes up for `adb start-server`.
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-/// How long to keep retrying `host:version` after starting the server.
 const START_TIMEOUT: Duration = Duration::from_secs(5);
-/// Upper bound for a request/reply exchange (not for streaming reads).
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// The adb server. Always `127.0.0.1`: the Windows server binds IPv4 loopback only.
+/// Always `127.0.0.1`, never `localhost`: the Windows server binds IPv4 loopback only.
 #[derive(Clone, Debug)]
 pub struct AdbServer {
     addr: SocketAddr,
@@ -38,7 +33,6 @@ impl Default for AdbServer {
 #[derive(Clone, Debug)]
 pub enum DeviceSel {
     Serial(String),
-    /// Changes every time the device reconnects; use when serials collide.
     TransportId(u64),
 }
 
@@ -109,7 +103,6 @@ impl Serialize for DeviceState {
     }
 }
 
-/// One line of `host:devices-l`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeviceInfo {
     pub serial: String,
@@ -120,16 +113,10 @@ pub struct DeviceInfo {
     pub device: Option<String>,
 }
 
-/// Parses a `devices-l` list (one device per line). An empty list (the `0000`
-/// tracker frame) yields no devices. Lines that don't parse are skipped.
 pub fn parse_devices(text: &str) -> Vec<DeviceInfo> {
     text.lines().filter_map(parse_device_line).collect()
 }
 
-/// `%-22s %s` (serial, state), optional ` key:value` tokens, then ` transport_id:N`.
-/// `transport_id` is always last. The state is one word, except the Linux-only
-/// `no permissions (...); see [...]` text, which runs up to the first detail
-/// token. Unknown `key:value` tokens from newer adb versions are ignored.
 fn parse_device_line(line: &str) -> Option<DeviceInfo> {
     const NO_SERIAL: &str = "(no serial number)";
     let line = line.trim();
@@ -174,15 +161,13 @@ fn parse_device_line(line: &str) -> Option<DeviceInfo> {
     })
 }
 
-/// `host:track-devices-l` stream. Never write to it: the server closes trackers
-/// that send anything.
+/// Never write to a tracker: the server closes it.
 pub struct Tracker {
     stream: TcpStream,
 }
 
 impl Tracker {
-    /// Waits for the next frame. Every frame is the full list and frames can
-    /// repeat, so callers diff. EOF means the server went away (e.g. "Restart adb").
+    /// Every frame is the full list and frames can repeat, so callers diff.
     pub async fn next(&mut self) -> Result<Vec<DeviceInfo>, AdbError> {
         let text = read_protocol_string(&mut self.stream)
             .await
@@ -191,8 +176,7 @@ impl Tracker {
     }
 }
 
-/// Bounds a request/reply exchange. A server that accepts the connection but
-/// never answers (e.g. still initializing USB) must not wedge the caller.
+/// A server that accepts but never answers (e.g. still initializing USB) must not hang us.
 async fn handshake<T>(exchange: impl Future<Output = Result<T, AdbError>>) -> Result<T, AdbError> {
     tokio::time::timeout(HANDSHAKE_TIMEOUT, exchange)
         .await
@@ -201,8 +185,7 @@ async fn handshake<T>(exchange: impl Future<Output = Result<T, AdbError>>) -> Re
 }
 
 impl AdbServer {
-    /// One TCP connection per request: the server closes the socket after
-    /// answering any host query.
+    /// One TCP connection per request: the server closes the socket after any host query.
     async fn connect(&self) -> Result<TcpStream, AdbError> {
         match TcpStream::connect(self.addr).await {
             Ok(stream) => {
@@ -226,7 +209,6 @@ impl AdbServer {
         .await
     }
 
-    /// Server protocol version (41 for adb 37.x).
     pub async fn version(&self) -> Result<u32, AdbError> {
         let hex = self.host_query("host:version").await?;
         u32::from_str_radix(hex.trim(), 16)
@@ -261,8 +243,6 @@ impl AdbServer {
             .collect())
     }
 
-    /// Switches to the device's transport and opens `service` on it, returning
-    /// the raw stream after `OKAY`. `FAIL closed` maps to [`AdbError::Closed`].
     pub async fn open(&self, sel: &DeviceSel, service: &str) -> Result<AdbStream, AdbError> {
         handshake(async {
             let mut stream = self.connect().await?;
@@ -288,9 +268,7 @@ impl AdbServer {
         .await
     }
 
-    /// Returns the server version, starting the server with the SDK's adb
-    /// only when nothing is listening. Never spawn a different adb build: a
-    /// version mismatch kills the running server (SPEC section 5.7).
+    /// SDK adb only, and only if nothing listens: a different build kills the running server.
     pub async fn ensure_running(&self, adb_exe: &Path) -> Result<u32, AdbError> {
         match self.version().await {
             Err(AdbError::ServerDown) => {}
@@ -324,8 +302,6 @@ impl AdbServer {
     }
 }
 
-/// Candidate SDK roots: `ANDROID_HOME`, then `ANDROID_SDK_ROOT`, then Android
-/// Studio's default location (SPEC section 5.7).
 pub fn sdk_roots() -> impl Iterator<Item = PathBuf> {
     ["ANDROID_HOME", "ANDROID_SDK_ROOT"]
         .into_iter()
@@ -349,13 +325,10 @@ fn studio_sdk() -> Option<PathBuf> {
     std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Android/Sdk"))
 }
 
-/// An SDK tool's executable name (`adb.exe` on Windows, `adb` elsewhere).
 pub fn executable(name: &str) -> String {
     format!("{name}{}", std::env::consts::EXE_SUFFIX)
 }
 
-/// The SDK's adb (SPEC section 5.7). Blocking (file checks); call it once at
-/// startup.
 pub fn find_adb() -> Option<PathBuf> {
     sdk_roots()
         .map(|root| root.join("platform-tools").join(executable("adb")))

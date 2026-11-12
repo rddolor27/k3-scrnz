@@ -1,6 +1,3 @@
-//! Shell protocol v2 (SPEC section 5.4): packets are `u8 id`, `u32 LE length`,
-//! then `length` bytes. Separate stdout/stderr and an exit code.
-
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
 use super::{AdbError, AdbServer, AdbStream, DeviceSel};
@@ -10,9 +7,7 @@ const ID_STDOUT: u8 = 1;
 const ID_STDERR: u8 = 2;
 const ID_EXIT: u8 = 3;
 const ID_CLOSE_STDIN: u8 = 4;
-/// adbd packets are at most 1 MiB; anything far above that is a desync.
 const MAX_PACKET: usize = 16 * 1024 * 1024;
-/// Stdin is sent in packets well below adbd's 1 MiB limit.
 const STDIN_CHUNK: usize = 64 * 1024;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -26,7 +21,6 @@ pub enum ShellEvent {
 pub struct ShellOutput {
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
-    /// `None` when the stream ended without an exit packet (device disconnected).
     pub exit_code: Option<u8>,
 }
 
@@ -40,8 +34,6 @@ fn encode_packet(id: u8, payload: &[u8]) -> Result<Vec<u8>, AdbError> {
     Ok(packet)
 }
 
-/// Reads one packet. `Ok(None)` on EOF at a packet boundary; EOF inside a
-/// packet is an error.
 async fn read_packet<R: AsyncRead + Unpin>(r: &mut R) -> Result<Option<(u8, Vec<u8>)>, AdbError> {
     let mut header = [0u8; 5];
     if r.read(&mut header[..1]).await? == 0 {
@@ -71,18 +63,12 @@ fn to_event(id: u8, payload: Vec<u8>) -> Result<ShellEvent, AdbError> {
     }
 }
 
-/// A running `shell,v2,raw:` process. Dropping it closes the stream, which
-/// SIGHUPs the process on the device.
 pub struct ShellProcess {
     stream: AdbStream,
 }
 
 impl ShellProcess {
-    /// Next event, or `Ok(None)` when the stream ended (after the exit packet,
-    /// or with none if the device disconnected).
-    ///
-    /// Not cancel-safe: dropping the future mid-packet desyncs the stream. Don't
-    /// race it in `select!`; give the process its own reader task instead.
+    /// Not cancel-safe: dropping the future mid-packet desyncs the stream.
     pub async fn next_event(&mut self) -> Result<Option<ShellEvent>, AdbError> {
         match read_packet(&mut self.stream).await? {
             Some((id, payload)) => to_event(id, payload).map(Some),
@@ -99,7 +85,7 @@ impl ShellProcess {
         Ok(())
     }
 
-    /// Closes the process's stdin. Never half-close the socket instead.
+    /// Never half-close the socket instead.
     pub async fn close_stdin(&mut self) -> Result<(), AdbError> {
         self.stream
             .write_all(&encode_packet(ID_CLOSE_STDIN, &[])?)
@@ -108,8 +94,6 @@ impl ShellProcess {
     }
 }
 
-/// Starts `cmd` with `/system/bin/sh -c` on the device. Quote arguments with
-/// [`shell_quote`].
 pub async fn shell_spawn(
     server: &AdbServer,
     sel: &DeviceSel,
@@ -139,7 +123,6 @@ pub async fn shell(
     Ok(output)
 }
 
-/// POSIX single-quoting, as adb's own `escape_arg`: `it's` → `'it'\''s'`.
 pub fn shell_quote(arg: &str) -> String {
     format!("'{}'", arg.replace('\'', r"'\''"))
 }

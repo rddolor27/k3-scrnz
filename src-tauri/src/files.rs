@@ -1,10 +1,3 @@
-//! Device file explorer, like Android Studio's Device Explorer.
-//!
-//! Listing runs `find … -exec stat` in the device shell so permission errors
-//! come back as text. Transfers use sync `RECV`/`SEND`. A debuggable app's
-//! private data goes through `run-as <package>`; uploads there are pushed to
-//! `/data/local/tmp` first and copied in with `run-as cp`.
-
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
@@ -16,18 +9,12 @@ use tokio::io::AsyncWriteExt;
 
 use crate::adb::{self, AdbError, AdbServer, DeviceSel, MODE_FILE_0644, ShellEvent, shell_quote};
 
-/// Header carrying the hex-encoded JSON metadata of a raw-body upload.
 const UPLOAD_HEADER: &str = "x-k3-upload";
-/// Uploads are held in memory (and copied once for the sync request).
 const MAX_UPLOAD: u64 = 256 * 1024 * 1024;
-/// A listing that takes longer is stuck (hung FUSE mount, `/proc` node...).
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
-/// Upper bound for mkdir/rm/cp/pm.
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
-/// A download that delivers nothing for this long is stuck.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Folders that are never deleted, even with the UI's confirmation.
 const PROTECTED: &[&str] = &[
     "/sdcard/Android",
     "/storage/emulated",
@@ -47,7 +34,6 @@ pub enum FilesError {
     InvalidPackage(String),
     #[error("{0}")]
     Refused(String),
-    /// A device command failed; holds its stderr.
     #[error("{0}")]
     Device(String),
     #[error("the device did not respond in time")]
@@ -60,7 +46,6 @@ pub enum FilesError {
     App(String),
 }
 
-/// Tauri sends command errors to the UI as their message.
 impl Serialize for FilesError {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_str(&self.to_string())
@@ -82,19 +67,15 @@ pub struct FileEntry {
     pub name: String,
     pub kind: FileKind,
     pub size: u64,
-    /// Seconds since the epoch.
     pub modified: i64,
-    /// `ls -l` style, e.g. `drwxrwx--x`.
     pub mode: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Listing {
-    /// The normalized path that was listed.
     pub path: String,
     pub entries: Vec<FileEntry>,
-    /// Set when the device refused part or all of the listing.
     pub error: Option<String>,
 }
 
@@ -107,7 +88,6 @@ async fn within<T>(
         .map_err(|_| FilesError::Timeout)?
 }
 
-/// Where commands run: as the adb shell user, or as a debuggable app.
 struct Target {
     sel: DeviceSel,
     run_as: Option<String>,
@@ -136,7 +116,6 @@ impl Target {
         Ok(adb::shell(&AdbServer::default(), &self.sel, &self.command(cmd)).await?)
     }
 
-    /// Runs `cmd` and fails with its stderr unless it exits 0.
     async fn run_ok(&self, cmd: &str) -> Result<adb::ShellOutput, FilesError> {
         let out = within(COMMAND_TIMEOUT, self.run(cmd)).await?;
         match out.exit_code {
@@ -172,7 +151,6 @@ fn validate_package(package: String) -> Result<String, FilesError> {
     }
 }
 
-/// Absolute device path without `.`/`..`, repeated or trailing slashes.
 fn normalize_path(path: &str) -> Result<String, FilesError> {
     if !path.starts_with('/') || path.contains(['\0', '\n', '\r']) {
         return Err(FilesError::InvalidPath(path.to_owned()));
@@ -200,8 +178,8 @@ fn join(dir: &str, name: &str) -> Result<String, FilesError> {
     })
 }
 
-/// Parses `stat -c '<marker>%f %s %Y %n'` output: records start with a random
-/// per-request marker, so a file name containing a newline can't forge entries.
+/// Records start with a random per-request marker, so a file name containing a
+/// newline can't forge entries.
 fn parse_listing(stdout: &str, marker: &str) -> Vec<FileEntry> {
     let mut entries: Vec<FileEntry> = stdout
         .split(marker)
@@ -255,8 +233,7 @@ fn mode_string(mode: u32) -> String {
     text
 }
 
-/// Invisible formatting characters (bidi overrides, zero-width marks) that can
-/// make `invoice<U+202E>fdp.exe` look like a PDF in Explorer.
+/// `invoice<U+202E>fdp.exe` shows as a PDF in Explorer.
 fn is_format_char(c: char) -> bool {
     matches!(c,
         '\u{00AD}' | '\u{061C}' | '\u{180E}' | '\u{FEFF}'
@@ -266,7 +243,6 @@ fn is_format_char(c: char) -> bool {
         | '\u{2066}'..='\u{2069}')
 }
 
-/// A name that is safe as a Windows file or folder name.
 fn local_name(name: &str) -> String {
     let mut clean: String = name
         .chars()
@@ -310,7 +286,6 @@ fn downloads_root(app: &AppHandle) -> Result<PathBuf, FilesError> {
     Ok(dir.join("k3-scrnz"))
 }
 
-/// Reserves `dir/name`, or `name (1).ext`, `name (2).ext`... if it exists.
 async fn reserve_unique(dir: &Path, name: &str) -> Result<PathBuf, FilesError> {
     let (stem, ext) = match name.rsplit_once('.') {
         Some((stem, ext)) if !stem.is_empty() => (stem, format!(".{ext}")),
@@ -379,8 +354,6 @@ pub async fn list_dir(
     })
 }
 
-/// Saves a device file to `Downloads\k3-scrnz\<serial>\` and returns the local
-/// path. Data goes to `<name>.part` first and is renamed only when complete.
 #[tauri::command]
 pub async fn download_file(
     app: AppHandle,
@@ -424,14 +397,12 @@ async fn download_into(target: &Target, path: &str, part: &Path) -> Result<(), F
             .map_err(FilesError::from),
         Some(_) => pull_with_run_as(target, path, &mut file).await,
     };
-    // Finish pending writes before the file is renamed or removed.
     let flushed = file.flush().await;
     result?;
     flushed?;
     Ok(())
 }
 
-/// `run-as <package> cat <path>` over shell v2: stdout is binary-safe.
 async fn pull_with_run_as(
     target: &Target,
     path: &str,
@@ -522,7 +493,6 @@ fn check_upload_size(len: u64, name: &str) -> Result<(), FilesError> {
     Ok(())
 }
 
-/// Uploads a local file (drag and drop gives paths) into `remote_dir`.
 #[tauri::command]
 pub async fn upload_path(
     serial: String,
@@ -557,9 +527,7 @@ struct UploadMeta {
     run_as: Option<String>,
 }
 
-/// Uploads bytes picked in the webview. The body is the raw file; the
-/// `x-k3-upload` header holds `{serial, dir, name, runAs}` as hex-encoded JSON
-/// (headers must be ASCII and names may not be).
+/// `x-k3-upload` is hex-encoded JSON: headers must be ASCII and names may not be.
 #[tauri::command]
 pub async fn upload_bytes(request: Request<'_>) -> Result<String, FilesError> {
     let meta = request
@@ -605,8 +573,6 @@ pub async fn make_dir(
     Ok(())
 }
 
-/// Whether `path` is the root of an app's private data (`/data/data/<pkg>` or
-/// `/data/user/<n>/<pkg>`): deleting it would wipe the app's data.
 fn is_app_data_root(path: &str) -> bool {
     let parts: Vec<&str> = path.split('/').skip(1).collect();
     match parts.as_slice() {
@@ -616,8 +582,6 @@ fn is_app_data_root(path: &str) -> bool {
     }
 }
 
-/// Deletes a file or folder (recursively). The UI confirms first; top-level
-/// folders, storage roots and app-data roots are refused outright.
 #[tauri::command]
 pub async fn delete_path(
     serial: String,
@@ -639,8 +603,6 @@ pub async fn delete_path(
     Ok(())
 }
 
-/// Shows a downloaded file in the system file manager. Only real files under
-/// `Downloads/k3-scrnz` qualify, compared after resolving links and quirks.
 #[tauri::command]
 pub fn reveal_file(app: AppHandle, path: String) -> Result<(), FilesError> {
     let refused = || FilesError::Refused("only downloaded files can be shown".into());
@@ -699,7 +661,6 @@ fn reveal(file: &Path) -> std::io::Result<()> {
         .map(drop)
 }
 
-/// Third-party packages, for opening an app's private data with `run-as`.
 #[tauri::command]
 pub async fn list_packages(serial: String) -> Result<Vec<String>, FilesError> {
     let target = Target::new(serial, None)?;

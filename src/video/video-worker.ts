@@ -1,8 +1,3 @@
-/**
- * Video worker, one per mirror session (spec section 8.2): owns the WebSocket,
- * the WebCodecs `VideoDecoder` and the `OffscreenCanvas`, so video never
- * touches the main thread.
- */
 import { connect } from '../lib/ws'
 import { avcCodecString } from './codec-string'
 import type { WorkerEvent, WorkerInit } from './protocol'
@@ -12,15 +7,11 @@ const K_CONFIG = 2
 const K_FRAME = 3
 const MAX_QUEUE = 10
 const FRAME_NOTICE_MS = 500
-/** Key-frame requests at most this often (RESET_VIDEO restarts the encoder). */
+// RESET_VIDEO restarts the encoder, so don't request key frames more often.
 const NEED_KEY_EVERY_MS = 1000
-/** Consecutive decoder errors before giving up with a visible error. */
 const MAX_ERRORS = 5
-/**
- * Lag above this in two stats samples in a row means the decoder holds frames
- * back: an SPS without VUI `bitstream_restriction` makes Chromium's hardware
- * decoder use the whole DPB as a reorder window (spec section 8.2).
- */
+// An SPS without VUI `bitstream_restriction` makes Chromium's hardware decoder
+// reorder across the whole DPB (lag); sustained lag above this goes software.
 const MAX_LAG = 2
 
 let canvas: OffscreenCanvas | null = null
@@ -99,7 +90,6 @@ const onFrame = (frame: VideoFrame): void => {
 	}
 }
 
-/** Spec section 8.2: a decoder that holds frames back gets `prefer-software`. */
 const switchToSoftware = (lag: number): void => {
 	if (preferSoftware || failed) return
 	preferSoftware = true
@@ -114,7 +104,6 @@ const switchToSoftware = (lag: number): void => {
 }
 
 const onDecoderError = (which: VideoDecoder, message: string): void => {
-	// A late error from a decoder that was already replaced changes nothing.
 	if (which !== decoder) return
 	decoder = null
 	errors += 1
@@ -127,7 +116,6 @@ const onDecoderError = (which: VideoDecoder, message: string): void => {
 		})
 		return
 	}
-	// Retry in software after a hardware failure, from a fresh key frame.
 	preferSoftware = true
 	requestKey()
 }
@@ -143,7 +131,7 @@ const configure = (): void => {
 			})
 			decoder = created
 		} else if (decoder.state === 'configured') {
-			decoder.reset() // drop frames of the old size/orientation
+			decoder.reset()
 		}
 		// No `description`: the stream is Annex B.
 		decoder.configure({
@@ -188,7 +176,6 @@ const decode = (data: Uint8Array, key: boolean): void => {
 		decoder.decode(
 			new EncodedVideoChunk({
 				type: key ? 'key' : 'delta',
-				// The device PTS isn't needed for live display.
 				timestamp: Math.round(performance.now() * 1000),
 				data: chunk,
 			}),

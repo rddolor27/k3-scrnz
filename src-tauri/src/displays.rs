@@ -1,6 +1,3 @@
-//! Customer-screen auto-detection: polls `dumpsys display` and emits
-//! `displays-changed` (SPEC section 7, section 4).
-
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
@@ -14,14 +11,11 @@ use tokio::sync::{Mutex as AsyncMutex, Notify};
 use crate::adb::{self, AdbError, AdbServer, DeviceSel, DeviceState};
 use crate::devices::{DeviceHub, DeviceView};
 
-/// The visible device is polled this often (SPEC section 7.1).
 const POLL_EVERY: Duration = Duration::from_secs(5);
-/// How often the device list is checked for newly online devices.
 const WATCH_EVERY: Duration = Duration::from_secs(1);
 const POLL_TIMEOUT: Duration = Duration::from_secs(10);
-/// Polls closer together than this are one observation: the tab-switch poll,
-/// the "device online" poll and `get_displays` often fire together, and two
-/// identical answers milliseconds apart must not defeat the debounce.
+/// Polls closer together than this are one observation, so two identical
+/// answers milliseconds apart can't defeat the debounce.
 const MIN_POLL_GAP: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Error)]
@@ -45,14 +39,11 @@ pub struct DisplayInfo {
     pub name: String,
     pub width: u32,
     pub height: u32,
-    /// dumpsys `state`, e.g. `ON`; `UNKNOWN` when the line has none.
     pub state: String,
-    /// dumpsys `type`, e.g. `INTERNAL`, `VIRTUAL`, `EXTERNAL`; `UNKNOWN` when missing.
     pub kind: String,
     pub unique_id: Option<String>,
     pub owner: Option<String>,
     pub flags: Vec<String>,
-    /// From the matching `DisplayDeviceInfo` line, e.g. `NONE`.
     pub touch: Option<String>,
     pub customer: bool,
 }
@@ -75,7 +66,6 @@ struct Patterns {
 }
 
 impl Patterns {
-    /// SPEC section 7.1. The per-field patterns run on the rest of the logical line.
     fn compile() -> Result<Self, regex::Error> {
         Ok(Self {
             logical: Regex::new(
@@ -100,7 +90,6 @@ fn group<'h>(caps: &Captures<'h>, name: &str) -> Option<&'h str> {
     caps.name(name).map(|m| m.as_str())
 }
 
-/// SPEC section 7.2. `owner` is the first word after `owner` in the dumpsys line.
 fn is_customer(id: u32, name: &str, state: &str, owner: Option<&str>, flags: &[String]) -> bool {
     id != 0
         && flags.iter().any(|f| f == "FLAG_PRESENTATION")
@@ -151,8 +140,6 @@ fn parse_logical(p: &Patterns, line: &str) -> Option<DisplayInfo> {
     })
 }
 
-/// Parses `dumpsys display` (SPEC section 7.1): one entry per logical display,
-/// sorted by id, with `touch` joined on `uniqueId`.
 pub fn parse_displays(text: &str) -> Result<Vec<DisplayInfo>, DisplaysError> {
     let p = PATTERNS
         .as_ref()
@@ -178,8 +165,7 @@ pub fn parse_displays(text: &str) -> Result<Vec<DisplayInfo>, DisplaysError> {
     Ok(displays.into_values().collect())
 }
 
-/// What decides whether two polls differ: ids, size, state, type and the
-/// customer flag (SPEC section 7.3). Both lists are sorted by id.
+/// Both lists are sorted by id.
 fn same_view(a: &[DisplayInfo], b: &[DisplayInfo]) -> bool {
     a.len() == b.len()
         && a.iter().zip(b).all(|(x, y)| {
@@ -192,22 +178,15 @@ fn same_view(a: &[DisplayInfo], b: &[DisplayInfo]) -> bool {
         })
 }
 
-/// Per-device polling state: the debounced list plus bookkeeping.
 #[derive(Default)]
 struct DeviceDisplays {
-    /// `None` until the first successful poll.
     confirmed: Option<Vec<DisplayInfo>>,
-    /// A changed list seen once; confirmed when seen again right after.
     pending: Option<Vec<DisplayInfo>>,
     last_ok: Option<Instant>,
-    /// The last background poll failed (logs once per outage).
     failing: bool,
 }
 
 impl DeviceDisplays {
-    /// Feeds one successful poll; returns whether the confirmed list changed.
-    /// The first result is accepted directly; later, a changed list needs two
-    /// polls in a row (SPEC section 7.3).
     fn observe(&mut self, polled: Vec<DisplayInfo>) -> bool {
         if let Some(confirmed) = &self.confirmed {
             if same_view(confirmed, &polled) {
@@ -238,8 +217,8 @@ type Slot = Arc<AsyncMutex<DeviceDisplays>>;
 pub struct DisplayHub {
     app: AppHandle,
     devices: Arc<DeviceHub>,
-    /// One slot per listed device. The async mutex serializes polls and is held
-    /// across the `dumpsys` call, so events for a device stay in order.
+    /// The async mutex is held across the `dumpsys` call so a device's events
+    /// stay in order.
     slots: Mutex<HashMap<String, Slot>>,
     visible: Mutex<Option<String>>,
     visible_changed: Notify,
@@ -273,14 +252,12 @@ impl DisplayHub {
         lock(&self.slots).retain(|serial, _| listed.contains(serial.as_str()));
     }
 
-    /// Re-sending the same serial re-polls it (a poll under [`MIN_POLL_GAP`] old is reused).
     fn set_visible(&self, serial: Option<String>) {
         tracing::debug!(serial = ?serial, "visible device set");
         *lock(&self.visible) = serial;
         self.visible_changed.notify_one();
     }
 
-    /// The visible device, if it is online (an offline one would only fail).
     fn visible_online(&self) -> Option<String> {
         let serial = lock(&self.visible).clone()?;
         self.devices
@@ -305,8 +282,6 @@ impl DisplayHub {
         }
     }
 
-    /// Runs `dumpsys display` once and feeds the debounce; emits when the
-    /// confirmed list changed. A failure leaves the confirmed list alone.
     async fn poll(&self, serial: &str, state: &mut DeviceDisplays) -> Result<(), DisplaysError> {
         let polled = fetch(serial).await?;
         state.last_ok = Some(Instant::now());
@@ -321,8 +296,8 @@ impl DisplayHub {
         tauri::async_runtime::spawn(async move { hub.poll_background(&serial).await });
     }
 
-    /// A timer-driven poll. Skipped when this device is already being polled (a
-    /// hung device must not pile up tasks) or was polled a moment ago.
+    /// Skipped while this device is already being polled: a hung device must
+    /// not pile up tasks.
     async fn poll_background(&self, serial: &str) {
         let slot = self.slot(serial);
         let Ok(mut state) = slot.try_lock() else {
@@ -364,8 +339,6 @@ async fn fetch(serial: &str) -> Result<Vec<DisplayInfo>, DisplaysError> {
     }
 }
 
-/// Starts the poller: the visible device every [`POLL_EVERY`] and as soon as it
-/// changes, and every device once when it becomes online (SPEC section 7.1).
 pub fn start(hub: Arc<DisplayHub>) {
     tauri::async_runtime::spawn(async move {
         tracing::info!("display polling started");
@@ -404,7 +377,6 @@ pub fn start(hub: Arc<DisplayHub>) {
     });
 }
 
-/// Polls now (feeding the debounce) and returns the confirmed list.
 #[tauri::command]
 pub async fn get_displays(
     hub: State<'_, Arc<DisplayHub>>,
@@ -420,7 +392,6 @@ pub async fn get_displays(
     Ok(state.confirmed.clone().unwrap_or_default())
 }
 
-/// Which device's tab is visible (`None` = none); it is polled every 5 s.
 #[tauri::command]
 pub fn set_visible_device(hub: State<'_, Arc<DisplayHub>>, serial: Option<String>) {
     hub.set_visible(serial);

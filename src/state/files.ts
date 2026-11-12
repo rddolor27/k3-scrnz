@@ -4,13 +4,10 @@ import { type FileLocation, listDir, type Listing } from '../lib/ipc'
 
 export interface ListingState {
 	listing: Listing | null
-	/** Where `listing` came from. Actions on its rows must use this, not the
-	 * location being loaded, or they would hit a same-named file elsewhere. */
 	listedAt: FileLocation | null
 	loading: boolean
 }
 
-/** Lists `location`; keeps the previous listing visible while loading. */
 export const useListing = (
 	serial: string,
 	location: FileLocation,

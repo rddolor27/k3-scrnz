@@ -1,13 +1,9 @@
-//! Client → server control messages (SPEC section 6.5). One type byte, then
-//! fixed fields with no length prefix, so a wrong layout desyncs the stream and
-//! an unknown type kills the server.
-
 use serde::Deserialize;
 use thiserror::Error;
 
 pub const KEYCODE_POWER: i32 = 26;
 pub const KEYCODE_SLEEP: i32 = 223;
-/// Never sent: on the Gemini firmware it puts an awake device to sleep (SPEC section 12).
+/// Never sent: it puts an awake Gemini to sleep (SPEC section 12).
 pub const KEYCODE_WAKEUP: i32 = 224;
 
 const TEXT_MAX: usize = 300;
@@ -79,19 +75,16 @@ pub enum Control {
     ResetVideo,
 }
 
-/// Fixed-point u16 (pressure): `1.0` → `0xffff`.
 fn u16fp(f: f32) -> u16 {
     let u = (f.max(0.0) * 65536.0) as u32;
     if u >= 0xffff { 0xffff } else { u as u16 }
 }
 
-/// Fixed-point i16 for a value in [-1, 1] (scroll): `1.0` → `0x7fff`.
 fn i16fp(f: f32) -> i16 {
     let i = (f.clamp(-1.0, 1.0) * 32768.0) as i32;
     if i >= 0x7fff { 0x7fff } else { i as i16 }
 }
 
-/// The longest prefix of `s` that fits in `max` bytes without splitting a char.
 fn truncate_utf8(s: &str, max: usize) -> &[u8] {
     if s.len() <= max {
         return s.as_bytes();
@@ -103,7 +96,6 @@ fn truncate_utf8(s: &str, max: usize) -> &[u8] {
     &s.as_bytes()[..end]
 }
 
-/// Splits text into chunks of at most `max` bytes on char boundaries.
 fn split_utf8(mut s: &str, max: usize) -> Vec<&str> {
     let mut parts = Vec::new();
     while !s.is_empty() {
@@ -208,7 +200,6 @@ pub fn serialize(m: &Control) -> Result<Vec<u8>, ControlError> {
     Ok(b)
 }
 
-/// Control JSON from the UI's control WebSocket (SPEC section 9.4).
 #[derive(Debug, Deserialize)]
 #[serde(tag = "t", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum Input {
@@ -253,7 +244,6 @@ pub enum Input {
     GetClipboard {
         copy_key: u8,
     },
-    /// `force` bypasses the 1 s rate limit (the toolbar button).
     ResetVideo {
         #[serde(default)]
         force: bool,
@@ -275,9 +265,7 @@ fn check_size(got: (u16, u16), session: (u16, u16)) -> Result<(), ControlError> 
     }
 }
 
-/// Validates UI input against the current session size and turns it into
-/// control messages. Positions must use the session size or the server drops
-/// them silently; long text is split into 300-byte chunks.
+/// Positions must use the session size or the server drops them silently.
 pub fn to_controls(input: Input, session: (u16, u16)) -> Result<Vec<Control>, ControlError> {
     Ok(match input {
         Input::Key {

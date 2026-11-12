@@ -4,7 +4,6 @@ import type { AdbStatus, AppStats } from '../lib/ipc'
 import { useAppStats } from '../state/app-stats'
 import type { LoopbackState } from '../state/transport'
 
-/** SPEC section 14 M5 target: under 300 MB with 3 devices. */
 const RAM_TARGET_BYTES = 300 * 1024 * 1024
 
 interface StatusBarProps {
@@ -13,7 +12,6 @@ interface StatusBarProps {
 	loopback: LoopbackState
 }
 
-/** adb server, device count, transport check and app CPU/RAM (spec section 11). */
 export const StatusBar = ({
 	adb,
 	onlineCount,

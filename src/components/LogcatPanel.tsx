@@ -22,16 +22,13 @@ import {
 } from '../lib/logcat'
 import { useLogcat } from '../state/logcat'
 
-/** Fixed row height: virtualization and scroll compensation are exact maths. */
 const ROW_H = 18
 const OVERSCAN = 30
 const DEBOUNCE_MS = 250
-/** How far from the end still counts as "at the bottom". */
 const FOLLOW_SLACK_PX = 8
 const NEWLINES = /\r?\n/g
 const TRAILING_NEWLINES = /[\r\n]+$/
 
-/** What the filter bar shows; `toFilter` turns it into what Rust receives. */
 interface FilterDraft {
 	minLevel: number
 	tag: string
@@ -59,7 +56,7 @@ const toFilter = (draft: FilterDraft): LogFilter => {
 	}
 }
 
-/** The regex crate's message spans several lines; its last `error:` line says it. */
+// The regex crate's message spans lines; the last `error:` line is the cause.
 const shortError = (text: string): string => {
 	const lines = text
 		.split('\n')
@@ -69,10 +66,6 @@ const shortError = (text: string): string => {
 	return cause?.slice('error:'.length).trim() ?? lines.join(' ')
 }
 
-/**
- * A multi-line message shows on one row; the details strip has all of it.
- * Trailing newlines are dropped, as `logcat` itself does.
- */
 const oneLine = (msg: string): string => {
 	const text = msg.replace(TRAILING_NEWLINES, '')
 	return text.includes('\n') ? text.replace(NEWLINES, ' ↵ ') : text
@@ -82,7 +75,6 @@ interface LogcatPanelProps {
 	serial: string
 }
 
-/** Logcat of one device: filter bar, virtual list and details (spec section 10.3). */
 export const LogcatPanel = ({ serial }: LogcatPanelProps): JSX.Element => {
 	const logcat = useLogcat(serial)
 	const { setFilter, setPaused } = logcat
@@ -108,7 +100,6 @@ export const LogcatPanel = ({ serial }: LogcatPanelProps): JSX.Element => {
 		[],
 	)
 
-	// Text is debounced so typing doesn't re-filter Rust on every key.
 	const edit = (next: FilterDraft, debounce: boolean): void => {
 		setDraft(next)
 		window.clearTimeout(timer.current)
@@ -255,7 +246,6 @@ interface LogListProps {
 	epoch: number
 }
 
-/** Virtual list with Android Studio style follow mode, plus the details strip. */
 const LogList = ({
 	rows,
 	version,
@@ -268,7 +258,6 @@ const LogList = ({
 	const [seenEpoch, setSeenEpoch] = useState(epoch)
 	const [selected, setSelected] = useState<LogRow | null>(null)
 
-	// A reset (filter change, clear) shows fresh content: follow its end.
 	if (epoch !== seenEpoch) {
 		setSeenEpoch(epoch)
 		setFollowing(true)
@@ -283,8 +272,7 @@ const LogList = ({
 		overscan: OVERSCAN,
 	})
 
-	// After each batch: stick to the end, or keep the viewport still when the
-	// top was trimmed. Fixed rows make `trimmed * ROW_H` exact.
+	// Fixed rows make `trimmed * ROW_H` an exact scroll compensation.
 	useLayoutEffect(() => {
 		const el = scrollRef.current
 		if (!el) return
@@ -383,7 +371,6 @@ interface LogDetailProps {
 	onClose: () => void
 }
 
-/** The full, possibly multi-line, message of the clicked row. */
 const LogDetail = ({ row, onClose }: LogDetailProps): JSX.Element => {
 	const [, tsMs, pid, tid, level, tag, msg] = row
 	return (

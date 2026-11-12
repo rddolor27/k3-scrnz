@@ -31,13 +31,11 @@ export default defineConfig([
 		},
 	},
 
-	// Tooling config files run in Node.
 	{
 		files: ['*.config.{js,ts}'],
 		languageOptions: { globals: globals.node },
 	},
 
-	// App code: strict TypeScript conventions.
 	{
 		files: ['src/**/*.{ts,tsx}'],
 		extends: [reactHooks.configs.flat['recommended-latest']],

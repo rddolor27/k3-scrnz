@@ -14,7 +14,7 @@ const LOG_HEIGHT_KEY = 'k3.logHeight'
 const CUSTOMER_KEY = 'k3.customerPanel'
 const MIN_LOG = 120
 const KEEP_SCREEN_MS = 15_000
-/** The emulator encodes video in software; a smaller stream keeps lag low. */
+// The emulator encodes in software; a smaller stream keeps lag low.
 const EMULATOR_MAX_SIZE = 1280
 
 const readNumber = (key: string, fallback: number): number => {
@@ -30,7 +30,7 @@ const save = (key: string, value: string): void => {
 	try {
 		window.localStorage.setItem(key, value)
 	} catch {
-		// Storage can be unavailable; the layout just isn't remembered.
+		// Storage can be unavailable.
 	}
 }
 
@@ -38,11 +38,8 @@ interface DevicePaneProps {
 	device: DeviceView
 }
 
-/** The selected device: screen + customer screen + logcat, files, or info. */
 export const DevicePane = ({ device }: DevicePaneProps): JSX.Element => {
 	const [view, setView] = useState<View>('screen')
-	// The screen stays mounted (hidden) for a while after switching to Files
-	// or Info, so switching back doesn't restart the mirror (spec 8.3).
 	const [keepScreen, setKeepScreen] = useState(true)
 	const tone = stateTone(device)
 	const hint = stateHint(device)
@@ -119,7 +116,6 @@ interface StopEmulatorProps {
 	serial: string
 }
 
-/** A headless emulator has no window to close; this shuts it down. */
 const StopEmulator = ({ serial }: StopEmulatorProps): JSX.Element => {
 	const [state, setState] = useState<'idle' | 'stopping' | string>('idle')
 	const stop = (): void => {
@@ -146,7 +142,6 @@ interface ScreenLayoutProps {
 	hidden: boolean
 }
 
-/** Main screen and customer panel on top, logcat below a draggable splitter. */
 const ScreenLayout = ({ serial, hidden }: ScreenLayoutProps): JSX.Element => {
 	const customers = useCustomerDisplays(serial)
 	const [logHeight, setLogHeight] = useState(() =>

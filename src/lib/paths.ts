@@ -1,5 +1,3 @@
-/** Device path helpers. Device paths are POSIX and absolute. */
-
 export const joinPath = (dir: string, name: string): string =>
 	dir === '/' ? `/${name}` : `${dir}/${name}`
 
@@ -8,7 +6,6 @@ export const parentPath = (path: string): string => {
 	return cut <= 0 ? '/' : path.slice(0, cut)
 }
 
-/** Private data folder of an app opened with `run-as`. */
 export const appDataRoot = (pkg: string): string => `/data/data/${pkg}`
 
 export const formatSize = (bytes: number): string => {
@@ -25,7 +22,6 @@ export const formatSize = (bytes: number): string => {
 
 const pad = (n: number): string => String(n).padStart(2, '0')
 
-/** `YYYY-MM-DD HH:mm` in local time. */
 export const formatTime = (epochSeconds: number): string => {
 	const d = new Date(epochSeconds * 1000)
 	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`

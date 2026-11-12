@@ -14,16 +14,9 @@ export const metaState = (e: KeyboardEvent): number => {
 
 export type KeyAction =
 	| { kind: 'send'; message: ControlMessage }
-	/** Ctrl+V: paste the host clipboard into the device. */
 	| { kind: 'paste' }
 	| { kind: 'ignore' }
 
-/**
- * scrcpy "mixed" keyboard mode (spec section 9.3): special keys, letters,
- * space and anything with Ctrl/Alt/Meta become keycodes; printable ASCII
- * digits and punctuation become INJECT_TEXT (independent of the device's
- * layout); other characters go through the clipboard with paste.
- */
 export const mapKey = (
 	e: KeyboardEvent,
 	action: 0 | 1,

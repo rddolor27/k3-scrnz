@@ -1,7 +1,3 @@
-//! Mirror sessions: one scrcpy-server per (device, display), main or customer
-//! (SPEC sections 4, 6). Video goes to the webview over the loopback WebSocket;
-//! input comes back over it as JSON and is validated here.
-
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -26,20 +22,13 @@ use crate::scrcpy::server::{self, Connected, Options};
 use crate::scrcpy::video::{self, Packet};
 
 const FIRST_SESSION_TIMEOUT: Duration = Duration::from_secs(10);
-/// Pushing the jar and starting the shell must finish within this.
 const START_TIMEOUT: Duration = Duration::from_secs(20);
-/// An emulator's cold boot; quick boot takes seconds.
 const BOOT_TIMEOUT: Duration = Duration::from_secs(180);
-/// Bounded queue to the viewer (SPEC section 6.4).
 const VIEWER_QUEUE: usize = 16;
 const CONTROL_QUEUE: usize = 256;
-/// RESET_VIDEO at most this often unless forced (toolbar).
 const RESET_EVERY: Duration = Duration::from_secs(1);
-/// Config/session envelopes are never dropped. A viewer that can't take one
-/// for this long is stuck: it is detached and must re-attach (fresh config).
 const STALLED_VIEWER: Duration = Duration::from_secs(5);
-/// A session nobody watches or controls (the webview reloaded or crashed) is
-/// stopped after this. Missing *frames* never stop a session (static screens).
+/// Missing frames never stop a session: a static screen sends none.
 const NO_CLIENT_TIMEOUT: Duration = Duration::from_secs(15);
 const WATCHDOG_EVERY: Duration = Duration::from_secs(2);
 const LEFTOVER_CHECK_AFTER: Duration = Duration::from_secs(2);
@@ -80,7 +69,6 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// adb serials: letters, digits and `._:-` (tcpip serials contain `:`).
 fn valid_serial(serial: &str) -> Result<(), String> {
     let ok = !serial.is_empty()
         && serial.len() <= 128
@@ -99,19 +87,17 @@ pub struct Session {
     pub serial: String,
     pub role: Role,
     display_id: u32,
-    /// Size from the latest session packet; input must use it.
+    /// From the latest session packet; the server drops touches with another w,h.
     size: Mutex<(u16, u16)>,
     control_tx: mpsc::Sender<Vec<u8>>,
     viewer: Mutex<Option<mpsc::Sender<Bytes>>>,
     need_key: AtomicBool,
     last_reset: Mutex<Option<Instant>>,
-    /// Connected video/control WebSockets, and since when there are none.
     clients: AtomicUsize,
     unwatched_since: Mutex<Option<Instant>>,
     cancel: CancellationToken,
 }
 
-/// Counts a connected WebSocket for the no-client watchdog while alive.
 pub struct ClientGuard(Arc<Session>);
 
 impl Drop for ClientGuard {
@@ -137,8 +123,7 @@ impl Session {
         ClientGuard(Arc::clone(self))
     }
 
-    /// Attaches a video viewer, replacing any previous one, and asks for a
-    /// fresh config + key frame (the default key-frame interval is 10 s).
+    /// The default key-frame interval is 10 s, hence the forced reset.
     pub fn attach_viewer(&self) -> mpsc::Receiver<Bytes> {
         let (tx, rx) = mpsc::channel(VIEWER_QUEUE);
         let _ = tx.try_send(video::envelope(
@@ -153,7 +138,6 @@ impl Session {
         rx
     }
 
-    /// RESET_VIDEO, rate-limited to once per [`RESET_EVERY`] unless `force`.
     fn request_reset(&self, force: bool) {
         {
             let mut last = lock(&self.last_reset);
@@ -176,9 +160,7 @@ impl Session {
         }
     }
 
-    /// Never drops config/session envelopes (a stuck viewer is detached
-    /// instead); drops frames until the next key frame when the viewer falls
-    /// behind, and keeps asking for one (SPEC section 6.4).
+    /// Never drops config/session envelopes (a stuck viewer is detached instead).
     async fn deliver(&self, envelope: Bytes, important: bool, key: bool) {
         let Some(tx) = lock(&self.viewer).clone() else {
             return;
@@ -215,9 +197,6 @@ impl Session {
         }
     }
 
-    /// Validates and queues UI input. The customer session never takes input:
-    /// that screen has no touch, and its control socket is only a shutdown
-    /// handle. Both may ask for a key frame.
     pub async fn input(&self, input: Input) -> Result<(), String> {
         if let Input::ResetVideo { force } = input {
             self.request_reset(force);
@@ -240,8 +219,8 @@ impl Session {
             .map_err(|_| "the session has ended".to_string())
     }
 
-    /// Key down + up for the power button only (`device_power`). The control
-    /// WebSocket can't send POWER/SLEEP, and `serialize` refuses WAKEUP.
+    /// Only for `device_power`: the control WebSocket can't send POWER/SLEEP,
+    /// and `serialize` refuses WAKEUP.
     async fn press(&self, keycode: i32) -> Result<(), String> {
         for action in [0, 1] {
             self.send(&Control::Key {
@@ -256,7 +235,6 @@ impl Session {
     }
 }
 
-/// Removes a (serial, display, role) from the in-flight set when dropped.
 struct Starting<'a> {
     set: &'a Mutex<HashSet<(String, u32, Role)>>,
     key: (String, u32, Role),
@@ -275,7 +253,6 @@ pub struct MirrorHub {
     jar: OnceCell<Arc<Vec<u8>>>,
     sessions: Mutex<HashMap<String, Arc<Session>>>,
     starting: Mutex<HashSet<(String, u32, Role)>>,
-    /// Stale-jar sweep, once per device per app run, before its first push.
     swept: Mutex<HashMap<String, Arc<OnceCell<()>>>>,
 }
 
@@ -340,10 +317,8 @@ impl MirrorHub {
         }
     }
 
-    /// Starts a session and resolves after its first session packet (SPEC
-    /// section 4). One server per screen: a second concurrent start for the
-    /// same screen is refused (two `power_on` servers could press POWER twice),
-    /// and an existing session for it is replaced.
+    /// One server per screen: a second concurrent start is refused (two
+    /// `power_on` servers could press POWER twice).
     async fn start(
         self: &Arc<Self>,
         serial: String,
@@ -377,8 +352,6 @@ impl MirrorHub {
         let jar = self.jar().await?;
         let scid = rand::random::<u32>() & 0x7FFF_FFFF; // must fit in 31 bits
         let session_id = format!("{:08x}", rand::random::<u32>());
-        // A caller may ask for less than the configured size (grid tiles),
-        // never more.
         let limit = |configured: u32| max_size.map_or(configured, |m| m.max(320).min(configured));
         let options = match role {
             Role::Main => Options {
@@ -398,8 +371,8 @@ impl MirrorHub {
         };
         self.emit_state(&session_id, &serial, "starting", None);
 
-        // A just-started emulator is online in adb long before Android can
-        // run the server; a POS device only shows up once booted.
+        // A just-started emulator is online in adb long before Android can run
+        // the server.
         if serial.starts_with("emulator-") {
             wait_for_boot(&server, &sel).await?;
         }
@@ -491,9 +464,8 @@ impl MirrorHub {
         }
     }
 
-    /// Runs a session until a stream ends, it is stopped, or nobody watches it
-    /// any more; then cleans up in SPEC section 6.7 order: control, video,
-    /// shell, then a leftover check.
+    /// Cleans up in SPEC section 6.7 order: control, video, shell, then a
+    /// leftover check.
     async fn run(
         self: Arc<Self>,
         session: Arc<Session>,
@@ -513,9 +485,7 @@ impl MirrorHub {
             () = watchdog(&session) => Err("nobody was watching it".into()),
             () = session.cancel.cancelled() => Ok(()),
         };
-        // The streams were owned by the select branches and are closed now.
         shell_task.abort();
-        // Release the WebSockets still attached to this session.
         *lock(&session.viewer) = None;
         session.cancel.cancel();
         lock(&self.sessions).remove(&session.id);
@@ -543,8 +513,6 @@ impl MirrorHub {
     }
 }
 
-/// Resolves once the session has had no viewer and no control socket for
-/// [`NO_CLIENT_TIMEOUT`] (e.g. the webview reloaded without stopping it).
 async fn watchdog(session: &Session) {
     let mut tick = tokio::time::interval(WATCHDOG_EVERY);
     loop {
@@ -644,8 +612,7 @@ async fn device_messages<R: AsyncRead + Unpin>(
     }
 }
 
-/// Drains the server's stdout/stderr so the pipe never fills, logging each line
-/// and keeping the last few for error messages. Returns when the server exits.
+/// Drains the server's output so its pipe never fills.
 async fn read_server_output(
     mut shell: ShellProcess,
     serial: String,
@@ -705,7 +672,6 @@ pub fn stop_mirror(hub: State<'_, Arc<MirrorHub>>, session_id: String) {
     }
 }
 
-/// Polls `sys.boot_completed` (a cold boot can take minutes).
 async fn wait_for_boot(server: &AdbServer, sel: &DeviceSel) -> Result<(), ScrcpyError> {
     let deadline = tokio::time::Instant::now() + BOOT_TIMEOUT;
     loop {
@@ -753,9 +719,8 @@ async fn input_keyevent(sel: &DeviceSel, keycode: i32) -> Result<(), String> {
     }
 }
 
-/// Screen power per SPEC section 6.8: SLEEP (223) to turn off, POWER (26) only
-/// when `mWakefulness=Asleep`, never a blind POWER and never WAKEUP (224).
-/// Uses the main session's control socket when mirroring, else `input keyevent`.
+/// SLEEP (223) to turn off, POWER (26) only when `mWakefulness=Asleep`; never a
+/// blind POWER, never WAKEUP (224) (SPEC section 6.8).
 #[tauri::command]
 pub async fn device_power(
     hub: State<'_, Arc<MirrorHub>>,

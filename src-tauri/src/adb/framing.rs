@@ -1,11 +1,7 @@
-//! Smart-socket framing (SPEC section 5.1): requests are `hex4 length + payload`,
-//! replies are `OKAY`, `FAIL` + protocol string, or a protocol string.
-
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use super::AdbError;
 
-/// The length has 4 hex digits, so a request is at most 0xFFFF bytes.
 const MAX_REQUEST: usize = 0xFFFF;
 
 pub fn encode_request(payload: &str) -> Result<Vec<u8>, AdbError> {
@@ -34,7 +30,6 @@ pub async fn send_request<W: AsyncWrite + Unpin>(w: &mut W, payload: &str) -> Re
     Ok(())
 }
 
-/// Reads `OKAY`, or `FAIL` + reason (mapped to an [`AdbError`]).
 pub async fn read_status<R: AsyncRead + Unpin>(r: &mut R) -> Result<(), AdbError> {
     let mut status = [0u8; 4];
     r.read_exact(&mut status).await?;
@@ -47,7 +42,6 @@ pub async fn read_status<R: AsyncRead + Unpin>(r: &mut R) -> Result<(), AdbError
     }
 }
 
-/// Reads `hex4 length + bytes`. Non-UTF-8 bytes are replaced.
 pub async fn read_protocol_string<R: AsyncRead + Unpin>(r: &mut R) -> Result<String, AdbError> {
     let mut len = [0u8; 4];
     r.read_exact(&mut len).await?;

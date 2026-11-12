@@ -1,6 +1,3 @@
-//! Device list: one `host:track-devices-l` stream feeds a registry, which emits
-//! `devices-changed` to the UI (SPEC section 4, section 5.2, section 11).
-
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -12,7 +9,6 @@ use tauri::{AppHandle, Emitter, State};
 use crate::adb::{AdbError, AdbServer, DeviceInfo, DeviceState};
 use crate::config::ConfigStore;
 
-/// A vanished device's tab stays (greyed) this long before it is removed.
 const GONE_GRACE: Duration = Duration::from_secs(30);
 const BACKOFF_MIN: Duration = Duration::from_millis(250);
 const BACKOFF_MAX: Duration = Duration::from_secs(5);
@@ -22,16 +18,13 @@ const PRUNE_EVERY: Duration = Duration::from_secs(1);
 #[serde(rename_all = "camelCase")]
 pub struct DeviceView {
     pub serial: String,
-    /// Friendly name from the config, else the model.
     pub name: String,
-    /// True when `name` comes from the config.
     pub pinned: bool,
     pub state: DeviceState,
     pub model: Option<String>,
     pub product: Option<String>,
     pub device: Option<String>,
     pub transport_id: u64,
-    /// Unplugged; the tab is removed after [`GONE_GRACE`] unless it returns.
     pub gone: bool,
 }
 
@@ -39,14 +32,12 @@ pub struct DeviceView {
 #[serde(rename_all = "camelCase")]
 pub struct AdbStatus {
     pub connected: bool,
-    /// Server protocol version (41 for adb 37.x).
     pub version: Option<u32>,
     pub error: Option<String>,
 }
 
 struct Entry {
     info: DeviceInfo,
-    /// Connection order, for tab order.
     first_seen: u64,
     gone_since: Option<Instant>,
 }
@@ -58,8 +49,6 @@ struct Registry {
 }
 
 impl Registry {
-    /// Applies a full tracker frame; returns whether anything changed. Frames
-    /// repeat, so an identical frame is not a change.
     fn apply(&mut self, list: Vec<DeviceInfo>, now: Instant) -> bool {
         let mut changed = false;
         let mut present: HashSet<String> = HashSet::with_capacity(list.len());
@@ -125,7 +114,6 @@ impl Registry {
         self.entries.len() != before
     }
 
-    /// Pinned (named) devices first, then connection order.
     fn views(&self, names: &BTreeMap<String, String>) -> Vec<DeviceView> {
         let mut entries: Vec<&Entry> = self.entries.values().collect();
         entries.sort_by_key(|e| (!names.contains_key(&e.info.serial), e.first_seen));
@@ -157,8 +145,7 @@ pub struct DeviceHub {
     config: Arc<ConfigStore>,
     registry: Mutex<Registry>,
     status: Mutex<AdbStatus>,
-    /// Serializes "compute views + emit" across the tracker, the prune timer
-    /// and renames, so an older list is never emitted after a newer one.
+    /// Serializes "compute views + emit" so an older list is never emitted after a newer one.
     emit_guard: Mutex<()>,
 }
 
@@ -209,7 +196,6 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// Starts the tracker (with reconnect) and the prune timer.
 pub fn start(hub: Arc<DeviceHub>, adb_exe: Option<PathBuf>) {
     match &adb_exe {
         Some(exe) => {
@@ -225,7 +211,6 @@ pub fn start(hub: Arc<DeviceHub>, adb_exe: Option<PathBuf>) {
         let mut backoff = BACKOFF_MIN;
         loop {
             let error = track(&tracker_hub, &server, adb_exe.as_deref(), &mut backoff).await;
-            // Warn once per outage; retries while the server stays down are debug.
             if backoff == BACKOFF_MIN {
                 tracing::warn!("device tracker stopped: {error}; retrying");
             } else {
@@ -250,8 +235,7 @@ pub fn start(hub: Arc<DeviceHub>, adb_exe: Option<PathBuf>) {
     });
 }
 
-/// Runs one tracker connection until it fails; returns why. Never writes to the
-/// tracker socket (SPEC section 5.2).
+/// Never writes to the tracker socket (SPEC section 5.2).
 async fn track(
     hub: &DeviceHub,
     server: &AdbServer,
@@ -279,8 +263,7 @@ async fn track(
     loop {
         match tracker.next().await {
             Ok(list) => {
-                // Only a connection that delivers frames counts as healthy, so a
-                // server that accepts and drops at once keeps backing off.
+                // Reset only once frames arrive, so accept-then-drop keeps backing off.
                 *backoff = BACKOFF_MIN;
                 hub.update(|r| r.apply(list, Instant::now()));
             }
@@ -299,7 +282,6 @@ pub fn get_adb_status(hub: State<'_, Arc<DeviceHub>>) -> AdbStatus {
     lock(&hub.status).clone()
 }
 
-/// Persists a friendly name (empty clears it) and re-sorts the tabs.
 #[tauri::command]
 pub async fn set_device_name(
     hub: State<'_, Arc<DeviceHub>>,

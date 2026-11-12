@@ -3,7 +3,6 @@ import { type JSX, useEffect, useRef, useState } from 'react'
 import { type Avd, listAvds, startEmulator, stopEmulator } from '../lib/ipc'
 import { info, warn } from '../lib/log'
 
-/** While the menu is open, so a booting emulator flips to "running". */
 const REFRESH_MS = 3000
 
 type Load =
@@ -12,14 +11,9 @@ type Load =
 	| { kind: 'failed'; message: string }
 
 interface EmulatorMenuProps {
-	/** Selects a device tab (it may appear only once the emulator boots). */
 	onOpen: (serial: string) => void
 }
 
-/**
- * Lists the SDK's AVDs and boots one headless. A booted emulator gets a
- * normal, mirrored device tab.
- */
 export const EmulatorMenu = ({ onOpen }: EmulatorMenuProps): JSX.Element => {
 	const [open, setOpen] = useState(false)
 	const [load, setLoad] = useState<Load>({ kind: 'loading' })

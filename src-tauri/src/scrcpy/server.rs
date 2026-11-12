@@ -1,6 +1,3 @@
-//! Starting scrcpy-server on the device and connecting its sockets (SPEC
-//! sections 6.1, 6.2) and cleaning up after it (6.7).
-
 use std::time::Duration;
 
 use tokio::io::AsyncReadExt;
@@ -12,9 +9,8 @@ use crate::adb::{
     self, AdbError, AdbServer, AdbStream, DeviceSel, MODE_FILE_0644, ShellProcess, shell_quote,
 };
 
-/// `FAIL closed` on the socket means nothing listens yet: retry this often...
+/// `FAIL closed` on the socket means nothing listens yet.
 const CONNECT_RETRY: Duration = Duration::from_millis(100);
-/// ...for this long (the Gemini needed about 1.3 s; SPEC section 6.2).
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// A just-booted emulator loads the server slowly (it took 10–15 s).
 pub const EMULATOR_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
@@ -25,8 +21,6 @@ pub struct Options {
     pub max_size: u32,
     pub max_fps: u32,
     pub bit_rate: u32,
-    /// The main session wakes the screen and syncs the clipboard; the customer
-    /// session only watches.
     pub main: bool,
 }
 
@@ -36,8 +30,7 @@ pub struct Connected {
     pub device_name: String,
 }
 
-/// Per-session jar: the server's cleanup deletes its own jar, so two sessions
-/// never delete each other's.
+/// Per-session: the server's cleanup deletes its own jar, so sessions mustn't share one.
 fn jar_path(scid: u32) -> String {
     format!("/data/local/tmp/scrcpy-server-{scid:08x}.jar")
 }
@@ -46,9 +39,8 @@ fn socket_name(scid: u32) -> String {
     format!("localabstract:scrcpy_{scid:08x}")
 }
 
-/// `key=value` arguments (SPEC section 6.1). `audio=false` is required (audio
-/// would add a third socket). Global settings such as `stay_awake` are left at
-/// their defaults on purpose.
+/// `audio=false` is required: audio would add a third socket. Never set global
+/// device settings such as `stay_awake` here.
 fn server_args(scid: u32, o: &Options) -> String {
     [
         format!("scid={scid:08x}"),
@@ -68,8 +60,7 @@ fn server_args(scid: u32, o: &Options) -> String {
     .join(" ")
 }
 
-/// Pushes the server and starts it over shell v2. Keep the returned process
-/// alive for the whole session: closing it kills the server.
+/// Keep the returned process alive for the whole session: closing it kills the server.
 pub async fn start(
     server: &AdbServer,
     sel: &DeviceSel,
@@ -93,9 +84,7 @@ pub async fn start(
     }
 }
 
-/// Removes our jars left behind by sessions that were killed mid-start (the app
-/// closed during a push). Run once per device per app run, before its first
-/// push, so no live session of ours can own one yet.
+/// Run once per device before its first push, or it could delete a live session's jar.
 pub async fn sweep_stale_jars(server: &AdbServer, sel: &DeviceSel) {
     let cmd = "rm -f /data/local/tmp/scrcpy-server-????????.jar";
     if let Err(e) = adb::shell(server, sel, cmd).await {
@@ -113,8 +102,6 @@ async fn timed<T>(
         .map_err(ScrcpyError::from)
 }
 
-/// Video socket (retrying `FAIL closed`), its dummy byte, the control socket
-/// right away, then the 64-byte device name and the codec id (SPEC section 6.2).
 pub async fn connect(
     server: &AdbServer,
     sel: &DeviceSel,
@@ -156,9 +143,7 @@ pub async fn connect(
     })
 }
 
-/// Kills a server that outlived its streams and removes its jar (SPEC section
-/// 6.7). The bracket in the pattern keeps `pkill -f` from matching the `sh -c`
-/// that runs it.
+/// The bracket in the pattern keeps `pkill -f` from matching the `sh -c` that runs it.
 pub async fn kill_leftover(server: &AdbServer, sel: &DeviceSel, scid: u32) {
     let hex = format!("{scid:08x}");
     let pattern = format!("scid=[{}]{}", &hex[..1], &hex[1..]);
@@ -166,7 +151,7 @@ pub async fn kill_leftover(server: &AdbServer, sel: &DeviceSel, scid: u32) {
         Ok(out) if out.exit_code == Some(0) => {
             tracing::info!(scid = %hex, "killed a leftover scrcpy-server");
         }
-        Ok(_) => {} // nothing left over, the normal case
+        Ok(_) => {}
         Err(e) => tracing::debug!(scid = %hex, "leftover check failed: {e}"),
     }
     let _ = adb::shell(

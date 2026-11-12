@@ -1,8 +1,3 @@
-/**
- * Maps a pointer position on a letterboxed (`object-fit: contain`) canvas to
- * device pixels of a `vw` x `vh` video (spec section 9.1). `devicePixelRatio`
- * cancels out.
- */
 export const toDevice = (
 	e: { clientX: number; clientY: number },
 	el: Element,
@@ -22,7 +17,6 @@ export const toDevice = (
 	}
 }
 
-/** Wheel delta → scrcpy scroll units, clamped to [-16, 16] (spec section 9.2). */
 export const wheelToScroll = (
 	e: WheelEvent,
 ): { hscroll: number; vscroll: number } => {

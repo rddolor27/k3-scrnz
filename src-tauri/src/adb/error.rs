@@ -1,6 +1,5 @@
 use thiserror::Error;
 
-/// Errors from the adb client (SPEC section 5.6).
 #[derive(Debug, Error)]
 pub enum AdbError {
     #[error("adb server is not running on 127.0.0.1:5037")]
@@ -13,10 +12,8 @@ pub enum AdbError {
     Fail(String),
     #[error("{0}")]
     NotFound(String),
-    /// `device still authorizing` / `device still connecting`: retry later.
     #[error("{0}")]
     NotReady(String),
-    /// `more than one device ...`: select by transport id instead.
     #[error("{0}")]
     Ambiguous(String),
     #[error("device unauthorized: accept the USB debugging prompt on the device")]
@@ -34,8 +31,6 @@ pub enum AdbError {
 }
 
 impl AdbError {
-    /// Maps a server `FAIL` reason to a variant. Only prefixes are matched: the
-    /// unauthorized message is multi-line and the offline one has a suffix.
     pub fn from_fail(reason: String) -> Self {
         if reason == "closed" {
             Self::Closed
@@ -57,7 +52,6 @@ impl AdbError {
         }
     }
 
-    /// EOF from the server means it went away (e.g. Android Studio's "Restart adb").
     pub(super) fn eof_as_server_closed(self) -> Self {
         match self {
             Self::Io(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Self::ServerClosed,

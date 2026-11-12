@@ -21,9 +21,7 @@ import {
 import { error, info } from '../lib/log'
 import type { WorkerEvent, WorkerInit } from '../video/protocol'
 
-/** A customer screen with no frame for this long shows "No content". */
 const IDLE_AFTER_MS = 3000
-/** Automatic restarts after a failure while the device stays connected. */
 const RETRY_DELAYS_MS = [1000, 2000, 5000]
 
 type Phase =
@@ -35,19 +33,12 @@ interface ScreenViewProps {
 	serial: string
 	displayId: number
 	role: MirrorRole
-	/** Shown above a customer screen, e.g. "Customer screen". */
 	label?: string
-	/** Grid tile: icon-only toolbar, `toolbarStart` at its left. */
 	compact?: boolean
 	toolbarStart?: ReactNode
-	/** Lowers the stream size below the configured one (grid tiles). */
 	maxSize?: number
 }
 
-/**
- * One live screen: starts a mirror session, decodes it in a worker onto an
- * OffscreenCanvas, and (for the main screen) forwards input (spec sections 8, 9).
- */
 export const ScreenView = ({
 	serial,
 	displayId,
@@ -101,10 +92,8 @@ export const ScreenView = ({
 			controlRef.current?.send(message)
 		}
 
-		/** Shows the error and restarts the session after a backoff, a few times. */
 		const fail = (message: string): void => {
-			// One failure per mount: a dying session reports both its state
-			// event and the closed socket.
+			// A dying session reports both a state event and a closed socket.
 			if (!live || failed) return
 			failed = true
 			const delay = RETRY_DELAYS_MS[retriesRef.current]
@@ -262,7 +251,6 @@ export const ScreenView = ({
 			}
 			const key = (keycode: number, action: 0 | 1): void =>
 				send({ t: 'key', action, keycode, repeat: 0, meta: 0 })
-			/** scrcpy's mouse bindings: right = BACK/screen on, middle = HOME, back = recents. */
 			const specialDown = (button: number): void => {
 				special = button
 				if (button === 2) send({ t: 'backOrScreenOn', action: 0 })
@@ -279,7 +267,6 @@ export const ScreenView = ({
 			const onPointerDown = (e: PointerEvent): void => {
 				canvas.focus()
 				e.preventDefault()
-				// Capture for every button so its release arrives even off-canvas.
 				canvas.setPointerCapture(e.pointerId)
 				if (e.button === 0) {
 					flushMoves()
@@ -307,7 +294,7 @@ export const ScreenView = ({
 				}
 			}
 			// pointerup fires once, for the last released button: release
-			// everything this pointer still holds, whatever `e.button` says.
+			// everything this pointer holds, whatever `e.button` says.
 			const onPointerUp = (e: PointerEvent): void => {
 				if (pressed.has(e.pointerId)) {
 					flushMoves()
@@ -365,7 +352,6 @@ export const ScreenView = ({
 			}
 			const onKeyDown = (e: KeyboardEvent): void => onKey(e, 0)
 			const onKeyUp = (e: KeyboardEvent): void => onKey(e, 1)
-			// Keys still held when focus leaves would stay down on the device.
 			const onBlur = (): void => {
 				for (const keycode of downKeys.values()) key(keycode, 1)
 				downKeys.clear()
@@ -385,7 +371,6 @@ export const ScreenView = ({
 				if (frame) cancelAnimationFrame(frame)
 			})
 
-			// Device → PC clipboard, ignoring the echo of what we just pasted.
 			onDeviceClipboard((clip) => {
 				if (clip.serial !== serial || clip.text === lastSentClip) return
 				writeText(clip.text).catch((err: unknown) => {

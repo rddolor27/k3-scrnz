@@ -1,14 +1,3 @@
-//! Loopback WebSocket server (SPEC section 8.1).
-//!
-//! Binds `127.0.0.1:0` at startup and authenticates every connection with a
-//! 128-bit random token. The first message on a socket must be the JSON hello
-//! `{token, sessionId, role}`; anything else closes it.
-//!
-//! Roles:
-//! - `video`: binary envelopes of a mirror session, consumed by a Web Worker.
-//! - `control`: JSON input for a mirror session (SPEC section 9.4).
-//! - `echo`: the transport check; echoes every message back.
-
 use std::net::{Ipv4Addr, TcpListener as StdTcpListener};
 use std::sync::Arc;
 use std::time::Duration;
@@ -25,10 +14,8 @@ use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use crate::mirror::{MirrorHub, Session};
 use crate::scrcpy::control::Input;
 
-/// How long a new socket may stay silent before its hello arrives.
 const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// What the UI needs to open sockets.
 #[derive(Clone, Serialize)]
 pub struct Endpoint {
     pub port: u16,
@@ -122,7 +109,6 @@ async fn echo(mut ws: WebSocketStream<TcpStream>) {
     tracing::info!("echo client authenticated");
     let mut echoed = 0usize;
     while let Some(Ok(msg)) = ws.next().await {
-        // tungstenite answers pings and close frames itself.
         if !(msg.is_text() || msg.is_binary()) {
             continue;
         }
@@ -134,7 +120,6 @@ async fn echo(mut ws: WebSocketStream<TcpStream>) {
     tracing::info!("echo client closed after {echoed} message(s)");
 }
 
-/// Streams the session's envelopes until the viewer or the session goes away.
 async fn video(ws: WebSocketStream<TcpStream>, session: Arc<Session>) {
     tracing::debug!(session = %session.id, "video viewer attached");
     let _client = session.client();
@@ -160,8 +145,7 @@ async fn video(ws: WebSocketStream<TcpStream>, session: Arc<Session>) {
     tracing::debug!(session = %session.id, "video viewer detached");
 }
 
-/// Applies JSON input messages in order (TCP keeps them ordered), until the
-/// socket or the session closes.
+/// Input must be applied in order (TCP keeps it ordered).
 async fn control(mut ws: WebSocketStream<TcpStream>, session: Arc<Session>) {
     let _client = session.client();
     loop {
@@ -174,7 +158,6 @@ async fn control(mut ws: WebSocketStream<TcpStream>, session: Arc<Session>) {
         match serde_json::from_str::<Input>(text.as_str()) {
             Ok(input) => {
                 if let Err(e) = session.input(input).await {
-                    // e.g. a touch for the pre-rotation size; the next event is fine.
                     tracing::debug!(session = %session.id, "input refused: {e}");
                 }
             }

@@ -1,9 +1,3 @@
-//! Android emulator launcher: lists the SDK's AVDs and boots one headless
-//! (`-no-window`). It registers with the running adb server, so its tab
-//! mirrors it like any device. A headless emulator has no window to close: it
-//! is stopped through its console (`kill`), and k3.scrnz stops the ones it
-//! started when it exits.
-
 use std::collections::{HashMap, HashSet};
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
@@ -20,16 +14,14 @@ use tokio::net::tcp::OwnedReadHalf;
 use crate::adb::{AdbServer, DeviceSel, DeviceState};
 use crate::devices::DeviceHub;
 
-/// Windows `CREATE_NO_WINDOW`: no console window for the emulator process.
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const LIST_TIMEOUT: Duration = Duration::from_secs(15);
-/// An emulator that fails (unknown AVD, already running) exits within this.
 const EARLY_EXIT: Duration = Duration::from_secs(4);
 const CONSOLE_TIMEOUT: Duration = Duration::from_secs(5);
 const LOG_TAIL: usize = 600;
-/// Console ports are even numbers from 5554 (adb uses port + 1). New
-/// emulators get one of the first 16; any emulator may use up to 5682.
+/// Console ports are even, from 5554; adb uses port + 1. Any emulator may use
+/// up to 5682.
 const FIRST_PORT: u16 = 5554;
 const LAST_PORT: u16 = 5584;
 const MAX_CONSOLE_PORT: u16 = 5682;
@@ -58,7 +50,6 @@ pub enum EmulatorError {
     Io(#[from] std::io::Error),
 }
 
-/// Tauri sends command errors to the UI as their message.
 impl Serialize for EmulatorError {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_str(&self.to_string())
@@ -69,12 +60,9 @@ impl Serialize for EmulatorError {
 #[serde(rename_all = "camelCase")]
 pub struct Avd {
     pub name: String,
-    /// The adb serial while this AVD runs and has booted far enough to
-    /// answer `getprop`.
     pub serial: Option<String>,
 }
 
-/// An emulator this app started, with the console port it was given.
 struct Launched {
     child: Child,
     port: u16,
@@ -89,13 +77,11 @@ impl Launched {
 pub struct EmulatorState {
     exe: Option<PathBuf>,
     log_dir: Option<PathBuf>,
-    /// Keyed by AVD name.
     launched: Arc<Mutex<HashMap<String, Launched>>>,
     starting: Mutex<HashSet<String>>,
 }
 
 impl EmulatorState {
-    /// Blocking file checks; call once at startup.
     pub fn new(log_dir: Option<PathBuf>) -> Self {
         let exe = crate::adb::sdk_roots()
             .map(|root| {
@@ -116,8 +102,6 @@ impl EmulatorState {
     }
 }
 
-/// AVD names are `[A-Za-z0-9._-]` (avdmanager's rule); anything else never
-/// reaches the command line.
 fn valid_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 128
@@ -126,8 +110,7 @@ fn valid_name(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
-/// `-list-avds` prints one name per line; newer emulators may add `INFO |`
-/// lines, which never pass `valid_name`.
+/// Newer emulators add `INFO |` lines to `-list-avds`; they never pass `valid_name`.
 fn parse_avds(stdout: &str) -> Vec<String> {
     stdout
         .lines()
@@ -137,7 +120,6 @@ fn parse_avds(stdout: &str) -> Vec<String> {
         .collect()
 }
 
-/// `emulator-5554` → console port 5554.
 fn console_port(serial: &str) -> Option<u16> {
     let port: u16 = serial.strip_prefix("emulator-")?.parse().ok()?;
     (FIRST_PORT..=MAX_CONSOLE_PORT)
@@ -145,7 +127,7 @@ fn console_port(serial: &str) -> Option<u16> {
         .then_some(port)
 }
 
-/// The AVD behind a running emulator (Android 12+ uses `ro.boot.qemu`).
+/// Android 12+ uses `ro.boot.qemu`.
 async fn running_avd(serial: &str) -> Option<String> {
     let out = crate::adb::shell(
         &AdbServer::default(),
@@ -161,7 +143,6 @@ async fn running_avd(serial: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// The first even port whose console and adb ports are both free.
 async fn free_port() -> Option<u16> {
     for port in (FIRST_PORT..=LAST_PORT).step_by(2) {
         let console = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port)).await;
@@ -213,8 +194,6 @@ pub async fn list_avds(
         .collect())
 }
 
-/// Boots the AVD without a window (host GPU, quick boot) and returns its adb
-/// serial. Its output goes to `emulator-<avd>.log` next to the app log.
 #[tauri::command]
 pub async fn start_emulator(
     state: State<'_, EmulatorState>,
@@ -304,8 +283,7 @@ async fn launch(
     Ok(Launched { child, port })
 }
 
-/// Shuts an emulator down through its console (it saves its quick-boot
-/// snapshot). Works for emulators started elsewhere too.
+/// Via the console, so the emulator saves its quick-boot snapshot.
 #[tauri::command]
 pub async fn stop_emulator(
     state: State<'_, EmulatorState>,
@@ -318,7 +296,6 @@ pub async fn stop_emulator(
             Ok(())
         }
         Err(e) => {
-            // Ours and the console is stuck: end the process instead.
             let mut launched = lock(&state.launched);
             let ours = launched
                 .values_mut()
@@ -336,8 +313,6 @@ pub async fn stop_emulator(
     }
 }
 
-/// On app exit: a headless emulator would keep running unseen, so stop the
-/// ones this app started (blocking, bounded by the console timeout).
 pub fn shutdown(state: &EmulatorState) {
     let ports: Vec<(String, u16)> = lock(&state.launched)
         .iter_mut()
@@ -406,7 +381,6 @@ async fn console_kill(port: u16) -> Result<(), EmulatorError> {
 
 const CONSOLE_CLOSED: &str = "closed";
 
-/// Reads console lines up to the `OK`/`KO` line that ends a reply.
 async fn read_reply(lines: &mut Lines<BufReader<OwnedReadHalf>>) -> Result<String, EmulatorError> {
     let mut text = String::new();
     while let Some(line) = lines.next_line().await? {
@@ -426,7 +400,6 @@ async fn read_reply(lines: &mut Lines<BufReader<OwnedReadHalf>>) -> Result<Strin
     Err(EmulatorError::Console(CONSOLE_CLOSED.into()))
 }
 
-/// `~/.emulator_console_auth_token`, written by the emulator.
 async fn auth_token() -> Option<String> {
     let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })?;
     let path = PathBuf::from(home).join(".emulator_console_auth_token");
@@ -435,7 +408,6 @@ async fn auth_token() -> Option<String> {
     (!token.is_empty()).then(|| token.to_owned())
 }
 
-/// The last lines of the emulator's output, for the error message.
 fn tail(text: &str) -> String {
     let lines: Vec<&str> = text
         .lines()

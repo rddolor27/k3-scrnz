@@ -1,18 +1,12 @@
-//! Binary `logcat -B` records (SPEC section 10.1, adb-protocol research section
-//! 7.4): `logger_entry`, little-endian, `hdr_size` bytes of header, then `len`
-//! bytes of payload.
-
 use bytes::{Buf, BytesMut};
 
 use super::LogcatError;
 
-/// The two u16 fields every record starts with: `len` and `hdr_size`.
 const PREFIX_LEN: usize = 4;
-/// Header through `nsec`. `lid` and `uid` only exist in newer, larger headers.
+/// Header through `nsec`; `lid` and `uid` only exist in newer, larger headers.
 const MIN_HDR_SIZE: usize = 20;
-/// The header size that includes `uid` (Android 13).
 const UID_HDR_SIZE: usize = 28;
-/// Past this the stream has lost sync; real headers are 20 to 28 bytes.
+/// Real headers are 20 to 28 bytes; past this the stream has lost sync.
 const MAX_HDR_SIZE: usize = 128;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -21,16 +15,12 @@ pub struct Record {
     pub tid: u32,
     pub sec: u32,
     pub nsec: u32,
-    /// `u32::MAX` when the header is too small to carry one.
     pub uid: u32,
     pub level: u8,
     pub tag: String,
-    /// May contain `\n`; the trailing NUL is stripped.
     pub msg: String,
 }
 
-/// Reassembles records from the stdout bytes of the shell: packet boundaries
-/// don't line up with record boundaries.
 #[derive(Default)]
 pub struct Parser {
     buf: BytesMut,
@@ -41,9 +31,6 @@ impl Parser {
         self.buf.extend_from_slice(data);
     }
 
-    /// The next complete record, or `Ok(None)` when more bytes are needed.
-    /// An impossible header means the stream is out of sync; the caller
-    /// restarts logcat.
     pub fn next_record(&mut self) -> Result<Option<Record>, LogcatError> {
         loop {
             let Some(prefix) = self.buf.get(..PREFIX_LEN) else {
@@ -70,7 +57,6 @@ impl Parser {
     }
 }
 
-/// `None` for a record without a payload (not even a priority byte).
 fn parse_record(header: &[u8], payload: &[u8]) -> Option<Record> {
     let (&level, rest) = payload.split_first()?;
     let tag_end = rest.iter().position(|&b| b == 0).unwrap_or(rest.len());
@@ -94,7 +80,6 @@ fn parse_record(header: &[u8], payload: &[u8]) -> Option<Record> {
     })
 }
 
-/// `N` bytes at `at`; zeros when out of range (callers check lengths first).
 fn bytes_at<const N: usize>(bytes: &[u8], at: usize) -> [u8; N] {
     let mut out = [0u8; N];
     if let Some(src) = bytes.get(at..at + N) {

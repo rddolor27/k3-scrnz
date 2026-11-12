@@ -1,5 +1,3 @@
-//! `%APPDATA%\k3-scrnz\config.json` (SPEC section 4).
-
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -9,18 +7,14 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 const MAX_NAME_LEN: usize = 40;
-/// Kulay POS, the app "only my app" in the logcat panel filters on.
 const DEFAULT_APP_PACKAGE: &str = "pos.kulay.pos";
 const DEFAULT_LOG_RING_SIZE: usize = 50_000;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
-    /// Friendly tab names by device serial.
     #[serde(default)]
     pub names: BTreeMap<String, String>,
-    /// Other keys (`appPackage`, `mainMaxSize`, ...), kept as-is so saving
-    /// names never drops them.
     #[serde(flatten)]
     pub other: serde_json::Map<String, serde_json::Value>,
 }
@@ -44,9 +38,6 @@ pub struct ConfigStore {
 }
 
 impl ConfigStore {
-    /// Loads the config, or starts from defaults when it is missing. A file
-    /// that doesn't parse is moved aside to `config.json.bad`, not overwritten
-    /// silently. Blocking; call it from setup.
     pub fn load() -> Self {
         let path = std::env::var_os("APPDATA")
             .map(|dir| PathBuf::from(dir).join("k3-scrnz").join("config.json"));
@@ -62,8 +53,7 @@ impl ConfigStore {
         self.lock().names.clone()
     }
 
-    /// `appPackage`: the app whose log lines "only my app" keeps. Not
-    /// validated here; whoever puts it in a shell command must (see `logcat`).
+    /// Not validated here; whoever puts it in a shell command must.
     pub fn app_package(&self) -> String {
         self.lock()
             .other
@@ -75,8 +65,6 @@ impl ConfigStore {
             .to_owned()
     }
 
-    /// `logRingSize`: entries kept per device. A missing, non-numeric or zero
-    /// value falls back to the default.
     pub fn log_ring_size(&self) -> usize {
         self.lock()
             .other
@@ -87,8 +75,6 @@ impl ConfigStore {
             .unwrap_or(DEFAULT_LOG_RING_SIZE)
     }
 
-    /// `mainMaxSize` / `customerMaxSize`: the longest video side for each
-    /// screen (SPEC section 4). Out-of-range values fall back to the default.
     pub fn max_size(&self, customer: bool) -> u32 {
         let (key, default) = if customer {
             ("customerMaxSize", 1280)
@@ -104,7 +90,6 @@ impl ConfigStore {
             .unwrap_or(default)
     }
 
-    /// Sets (or, with an empty name, clears) a device's friendly name and saves.
     pub async fn set_name(
         self: &Arc<Self>,
         serial: String,
@@ -116,9 +101,7 @@ impl ConfigStore {
             .map_err(|e| ConfigError::Task(e.to_string()))?
     }
 
-    /// Saves first, then updates memory, so a failed write never shows a name
-    /// that would vanish on restart. `write_lock` keeps concurrent saves in
-    /// order; the data lock is only held to copy and to commit, never during I/O.
+    /// Saves first, then updates memory; `write_lock` keeps concurrent saves in order.
     fn set_name_blocking(&self, serial: &str, name: &str) -> Result<(), ConfigError> {
         let path = self.path.as_deref().ok_or(ConfigError::NoAppData)?;
         let name: String = name.trim().chars().take(MAX_NAME_LEN).collect();
@@ -165,8 +148,6 @@ fn read_or_default(path: &Path) -> Config {
     }
 }
 
-/// Writes and flushes a temp file next to the config, then renames it over the
-/// original, so a crash or power loss never leaves a truncated config.
 fn write_atomically(path: &Path, config: &Config) -> Result<(), ConfigError> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;

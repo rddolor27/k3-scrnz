@@ -5,11 +5,7 @@ use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
 
-/// A raw full-duplex stream to a device service, opened after a transport switch.
-///
-/// adb has no half-close (SPEC section 5.1): shutting down the write side makes
-/// the server close the whole stream. So `poll_shutdown` only flushes; drop the
-/// stream to close it (which also SIGHUPs a shell process on the device).
+/// adb has no half-close: shutdown closes the whole stream, so `poll_shutdown` only flushes.
 pub struct AdbStream {
     inner: TcpStream,
     transport_id: u64,

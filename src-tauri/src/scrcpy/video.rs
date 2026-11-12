@@ -1,6 +1,3 @@
-//! Video stream demux (SPEC section 6.3) and the envelope sent to the webview
-//! (section 6.4).
-
 use bytes::{BufMut, Bytes, BytesMut};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
@@ -10,15 +7,15 @@ pub const K_META: u8 = 0;
 pub const K_SESSION: u8 = 1;
 pub const K_CONFIG: u8 = 2;
 pub const K_FRAME: u8 = 3;
-/// `"h264"`.
 pub const CODEC_H264: u32 = 0x6832_3634;
-/// Sanity cap on a media packet.
 const MAX_PACKET: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Packet {
-    /// Starts every capture session (first start, rotation, RESET_VIDEO...).
-    Session { width: u32, height: u32 },
+    Session {
+        width: u32,
+        height: u32,
+    },
     Media {
         config: bool,
         key: bool,
@@ -27,7 +24,6 @@ pub enum Packet {
     },
 }
 
-/// Reads the next 12-byte header and its payload.
 pub async fn read_packet<R: AsyncRead + Unpin>(r: &mut R) -> Result<Packet, ScrcpyError> {
     let mut header = [0u8; 12];
     r.read_exact(&mut header).await?;
@@ -58,8 +54,7 @@ pub async fn read_packet<R: AsyncRead + Unpin>(r: &mut R) -> Result<Packet, Scrc
     })
 }
 
-/// `[kind][flags][0 0][u64 BE value]` + payload. The value is the codec id
-/// (meta), `w << 32 | h` (session) or the PTS (frame).
+/// `value` is the codec id (meta), `w << 32 | h` (session) or the PTS (frame).
 pub fn envelope(kind: u8, flags: u8, value: u64, payload: &[u8]) -> Bytes {
     let mut b = BytesMut::with_capacity(12 + payload.len());
     b.put_u8(kind);
@@ -70,8 +65,6 @@ pub fn envelope(kind: u8, flags: u8, value: u64, payload: &[u8]) -> Bytes {
     b.freeze()
 }
 
-/// `avc1.PPCCLL` from the SPS in an Annex-B config packet (the three bytes
-/// after the SPS NAL header). For logs; the webview computes the same.
 pub fn codec_string(config: &[u8]) -> Option<String> {
     let mut i = 0;
     while i + 4 < config.len() {

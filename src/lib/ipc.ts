@@ -1,13 +1,11 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
-/** Loopback WebSocket endpoint for video and control streams (spec section 8.1). */
 export interface Endpoint {
 	port: number
 	token: string
 }
 
-/** adb connection states (src-tauri/src/adb/host.rs `DeviceState::as_str`). */
 export type DeviceState =
 	| 'device'
 	| 'offline'
@@ -23,7 +21,6 @@ export type DeviceState =
 	| 'no-permissions'
 	| 'unknown'
 
-/** One device tab (src-tauri/src/devices.rs `DeviceView`). */
 export interface DeviceView {
 	serial: string
 	name: string
@@ -36,7 +33,6 @@ export interface DeviceView {
 	gone: boolean
 }
 
-/** src-tauri/src/devices.rs `AdbStatus`. */
 export interface AdbStatus {
 	connected: boolean
 	version: number | null
@@ -52,14 +48,10 @@ export const listDevices = (): Promise<DeviceView[]> =>
 export const getAdbStatus = (): Promise<AdbStatus> =>
 	invoke<AdbStatus>('get_adb_status')
 
-/** src-tauri/src/stats.rs `AppStats`: the app process and its WebView2 children. */
 export interface AppStats {
-	/** Share of the whole machine, 0–100. */
 	cpuPercent: number
-	/** Summed working sets (an upper bound: WebView2 processes share pages). */
 	memoryBytes: number
 	processes: number
-	/** Emulators started by the app, counted apart from it. */
 	emulatorCpuPercent: number
 	emulatorMemoryBytes: number
 }
@@ -67,30 +59,22 @@ export interface AppStats {
 export const getAppStats = (): Promise<AppStats> =>
 	invoke<AppStats>('get_app_stats')
 
-/** src-tauri/src/emulator.rs `Avd`. */
 export interface Avd {
 	name: string
-	/** The adb serial while it runs (once booted far enough for getprop). */
 	serial: string | null
 }
 
 export const listAvds = (): Promise<Avd[]> => invoke<Avd[]>('list_avds')
 
-/**
- * Boots the AVD without a window; resolves with its adb serial once it has
- * survived a few seconds. Its tab mirrors it once adb sees it.
- */
 export const startEmulator = (avd: string): Promise<string> =>
 	invoke<string>('start_emulator', { avd })
 
-/** Shuts an emulator down through its console (saves its quick boot). */
 export const stopEmulator = (serial: string): Promise<void> =>
 	invoke<void>('stop_emulator', { serial })
 
 export const isEmulator = (serial: string): boolean =>
 	serial.startsWith('emulator-')
 
-/** Saves a friendly name; an empty name clears it. */
 export const setDeviceName = (serial: string, name: string): Promise<void> =>
 	invoke<void>('set_device_name', { serial, name })
 
@@ -99,28 +83,22 @@ export const onDevicesChanged = (
 ): Promise<UnlistenFn> =>
 	listen<DeviceView[]>('devices-changed', (event) => handler(event.payload))
 
-/** src-tauri/src/files.rs `FileKind`. */
 export type FileKind = 'dir' | 'file' | 'link' | 'other'
 
-/** src-tauri/src/files.rs `FileEntry`. */
 export interface FileEntry {
 	name: string
 	kind: FileKind
 	size: number
-	/** Seconds since the epoch. */
 	modified: number
-	/** `ls -l` style, e.g. `drwxrwx--x`. */
 	mode: string
 }
 
-/** src-tauri/src/files.rs `Listing`. */
 export interface Listing {
 	path: string
 	entries: FileEntry[]
 	error: string | null
 }
 
-/** A device path, optionally inside a debuggable app via `run-as`. */
 export interface FileLocation {
 	path: string
 	runAs: string | null
@@ -129,7 +107,6 @@ export interface FileLocation {
 export const listDir = (serial: string, at: FileLocation): Promise<Listing> =>
 	invoke<Listing>('list_dir', { serial, path: at.path, runAs: at.runAs })
 
-/** Saves to Downloads/k3-scrnz/<serial>/ and resolves to the local path. */
 export const downloadFile = (
 	serial: string,
 	file: FileLocation,
@@ -140,7 +117,6 @@ export const downloadFile = (
 		runAs: file.runAs,
 	})
 
-/** Uploads a local file (from drag and drop) into `dir`. */
 export const uploadPath = (
 	serial: string,
 	localPath: string,
@@ -158,7 +134,6 @@ const toHex = (text: string): string =>
 		b.toString(16).padStart(2, '0'),
 	).join('')
 
-/** Uploads picked file bytes into `dir` (raw body + metadata header). */
 export const uploadBytes = (
 	serial: string,
 	dir: FileLocation,
@@ -187,21 +162,17 @@ export const deletePath = (serial: string, at: FileLocation): Promise<void> =>
 export const revealFile = (path: string): Promise<void> =>
 	invoke<void>('reveal_file', { path })
 
-/** Third-party packages, for opening app data with `run-as`. */
 export const listPackages = (serial: string): Promise<string[]> =>
 	invoke<string[]>('list_packages', { serial })
 
-/** A mirror session's role (spec section 6.1). */
 export type MirrorRole = 'main' | 'customer'
 
-/** src-tauri/src/mirror.rs `Started`. */
 export interface MirrorStarted {
 	sessionId: string
 	width: number
 	height: number
 }
 
-/** `session-state` event payload. */
 export interface SessionState {
 	sessionId: string
 	serial: string
@@ -209,8 +180,6 @@ export interface SessionState {
 	error: string | null
 }
 
-/** Resolves after the first video session packet (spec section 4). */
-/** `maxSize` can only lower the configured size (grid tiles use 1280). */
 export const startMirror = (
 	serial: string,
 	displayId: number,
@@ -227,7 +196,6 @@ export const startMirror = (
 export const stopMirror = (sessionId: string): Promise<void> =>
 	invoke<void>('stop_mirror', { sessionId })
 
-/** Screen power per spec section 6.8; resolves to the new state. */
 export const devicePower = (
 	serial: string,
 	action: 'toggle' | 'wake' | 'sleep',
@@ -246,7 +214,6 @@ export const onDeviceClipboard = (
 		handler(event.payload),
 	)
 
-/** src-tauri/src/displays.rs `DisplayInfo`. */
 export interface DisplayInfo {
 	id: number
 	name: string
@@ -264,7 +231,6 @@ export interface DisplayInfo {
 export const getDisplays = (serial: string): Promise<DisplayInfo[]> =>
 	invoke<DisplayInfo[]>('get_displays', { serial })
 
-/** Tells Rust which device's tab is visible, for display polling. */
 export const setVisibleDevice = (serial: string | null): Promise<void> =>
 	invoke<void>('set_visible_device', { serial })
 

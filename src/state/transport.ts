@@ -9,10 +9,6 @@ export type LoopbackState =
 	| { phase: 'done'; result: LoopbackCheck }
 	| { phase: 'failed'; error: string }
 
-/**
- * Runs the loopback WebSocket check once at startup (spec section 8.1) and
- * logs the result, so every launch re-proves the video transport.
- */
 export const useLoopbackCheck = (): LoopbackState => {
 	const [state, setState] = useState<LoopbackState>({ phase: 'running' })
 

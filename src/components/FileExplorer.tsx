@@ -44,7 +44,7 @@ type Status =
 	| { kind: 'busy' | 'info' | 'error'; text: string }
 	| { kind: 'saved'; text: string; localPath: string }
 
-/** Names with line breaks can't be addressed safely; they're shown, not acted on. */
+// Names with line breaks can't be addressed safely: shown, not acted on.
 const isActionable = (entry: FileEntry): boolean => !/[\n\r]/.test(entry.name)
 
 const baseName = (localPath: string): string =>
@@ -54,7 +54,6 @@ interface FileExplorerProps {
 	serial: string
 }
 
-/** Device file explorer, like Android Studio's Device Explorer. */
 export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 	const [location, setLocation] = useState<FileLocation>(HOME)
 	const [reload, setReload] = useState(0)
@@ -78,7 +77,6 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 			?.scrollIntoView({ block: 'nearest' })
 	}, [selected])
 
-	// Files dropped from Windows Explorer upload into the folder on screen.
 	useEffect(() => {
 		let live = true
 		let unlisten: (() => void) | null = null
@@ -210,7 +208,6 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 		if (entry.kind === 'dir') go(target)
 		else if (entry.kind === 'file') download(entry)
 		else if (entry.kind === 'link') {
-			// A link may point to a file: probe before navigating.
 			listDir(serial, target)
 				.then((probe) => {
 					if (probe.error && /not a directory/i.test(probe.error)) {
@@ -284,7 +281,6 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 	}
 
 	const onListKey = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
-		// Only keys pressed on the list itself, not in inputs inside it.
 		if (e.target !== e.currentTarget || !idle) return
 		const entries = listing?.entries ?? []
 		if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -516,7 +512,6 @@ interface PathInputProps {
 	onSubmit: (path: string) => void
 }
 
-/** Editable path; Enter goes there, Escape resets. */
 const PathInput = ({ path, onSubmit }: PathInputProps): JSX.Element => {
 	const [value, setValue] = useState(path)
 	return (
@@ -535,7 +530,6 @@ const PathInput = ({ path, onSubmit }: PathInputProps): JSX.Element => {
 }
 
 interface FolderNameInputProps {
-	/** `null` when cancelled or invalid. */
 	onDone: (name: string | null) => void
 }
 
@@ -575,7 +569,6 @@ interface AppDataPickerProps {
 	onOpen: (pkg: string) => void
 }
 
-/** Opens a debuggable app's private data via run-as. */
 const AppDataPicker = ({ serial, onOpen }: AppDataPickerProps): JSX.Element => {
 	const [value, setValue] = useState('')
 	const [packages, setPackages] = useState<string[] | null>(null)
@@ -587,7 +580,7 @@ const AppDataPicker = ({ serial, onOpen }: AppDataPickerProps): JSX.Element => {
 		listPackages(serial)
 			.then(setPackages)
 			.catch((e: unknown) => {
-				setPackages(null) // retry on the next focus
+				setPackages(null)
 				void error(
 					`file explorer: listing packages failed: ${String(e)}`,
 				)

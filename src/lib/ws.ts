@@ -2,11 +2,6 @@ import type { Endpoint } from './ipc'
 
 export type Role = 'video' | 'control' | 'echo'
 
-/**
- * Opens a socket to the Rust loopback server and sends the token hello as the
- * first message (spec section 8.1). Listeners added after this call run after the
- * hello is sent.
- */
 export const connect = (
 	ep: Endpoint,
 	role: Role,
@@ -26,12 +21,7 @@ export type LoopbackCheck =
 	| { ok: true; rttMs: number; bytes: number }
 	| { ok: false; error: string }
 
-/**
- * Transport check: authenticates with role "echo", sends a binary probe and
- * waits for the same bytes back. Fails if the page can't reach the loopback
- * port, for example when Chromium's Local Network Access blocks or prompts in
- * a release build.
- */
+// Fails when Chromium's Local Network Access blocks or prompts (release builds).
 export const checkLoopback = (
 	ep: Endpoint,
 	timeoutMs = 5000,

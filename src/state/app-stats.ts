@@ -5,7 +5,6 @@ import { warn } from '../lib/log'
 
 const POLL_MS = 2000
 
-/** CPU/RAM of the app for the status bar, polled only while the window shows. */
 export const useAppStats = (): AppStats | null => {
 	const [stats, setStats] = useState<AppStats | null>(null)
 
@@ -19,7 +18,6 @@ export const useAppStats = (): AppStats | null => {
 					if (live) setStats(next)
 				})
 				.catch((e: unknown) => {
-					// Logged once: the readout just stays empty.
 					if (warned) return
 					warned = true
 					void warn(`app stats unavailable: ${String(e)}`)

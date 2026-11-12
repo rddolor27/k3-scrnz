@@ -11,10 +11,6 @@ import { FOCUS_LOG_FILTER_EVENT } from './lib/logcat'
 import { useDevices } from './state/devices'
 import { useLoopbackCheck } from './state/transport'
 
-/**
- * A hidden tab (or a minimized window) keeps its mirror for this long, so
- * switching back is instant; then the session stops to save CPU (spec 8.3).
- */
 const KEEP_HIDDEN_MS = 15_000
 
 export const App = (): JSX.Element => {
@@ -24,7 +20,6 @@ export const App = (): JSX.Element => {
 	const [hiddenAt, setHiddenAt] = useState<Record<string, number>>({})
 	const [paused, setPaused] = useState(false)
 	const [grid, setGrid] = useState(false)
-	// Falls back to the first tab when the selected device's tab is removed.
 	const current =
 		devices.find((d) => d.serial === selected) ?? devices[0] ?? null
 	const currentSerial = current?.serial ?? null
@@ -32,8 +27,8 @@ export const App = (): JSX.Element => {
 	const showGrid = grid && onlineDevices.length > 0
 	const visibleSerial = showGrid ? null : currentSerial
 
-	// The grid and a device pane never mirror the same screen at once (the
-	// hub replaces a session for the same screen), so no pane stays mounted.
+	// The hub replaces a session for the same screen, so the grid and a
+	// device pane must never mirror it at once.
 	const selectGrid = (): void => {
 		setGrid(true)
 		setHiddenAt({})
@@ -56,7 +51,6 @@ export const App = (): JSX.Element => {
 		setSelected(serial)
 	}
 
-	// Drop panes that have been hidden for longer than KEEP_HIDDEN_MS.
 	useEffect(() => {
 		const timer = window.setInterval(() => {
 			const now = Date.now()
@@ -72,8 +66,7 @@ export const App = (): JSX.Element => {
 		return (): void => window.clearInterval(timer)
 	}, [])
 
-	// A minimized window pauses mirrors after the same grace period.
-	// (Tauri's backgroundThrottling is unsupported on Windows.)
+	// visibilitychange: Tauri's backgroundThrottling is unsupported on Windows.
 	useEffect(() => {
 		let timer = 0
 		const onVisibility = (): void => {
@@ -91,7 +84,6 @@ export const App = (): JSX.Element => {
 		}
 	}, [])
 
-	// Rust polls the visible device's displays (spec 7.1), also on focus.
 	useEffect(() => {
 		void setVisibleDevice(visibleSerial)
 		const onFocus = (): void => void setVisibleDevice(visibleSerial)
@@ -99,9 +91,6 @@ export const App = (): JSX.Element => {
 		return (): void => window.removeEventListener('focus', onFocus)
 	}, [visibleSerial])
 
-	// App shortcuts (spec section 9.3), in the capture phase and stopped there,
-	// so they never reach a mirrored device: Ctrl+1..9, Ctrl+(Shift+)Tab and
-	// Ctrl+Shift+L (focus the log filter).
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent): void => {
 			if (!e.ctrlKey || e.altKey || e.metaKey) return

@@ -1,7 +1,3 @@
-//! scrcpy-server 5.0.1 integration (SPEC section 6): launch, connect, video
-//! demux, control serialization and device messages. Everything on the wire is
-//! big-endian. There is no version negotiation.
-
 pub mod control;
 pub mod device_msg;
 pub mod server;
@@ -13,7 +9,6 @@ use crate::adb::AdbError;
 
 /// Must equal the bundled server's version exactly.
 pub const SERVER_VERSION: &str = "5.0.1";
-/// Bundled resource name (`tauri.conf.json` → `bundle.resources`).
 pub const SERVER_RESOURCE: &str = "scrcpy-server-v5.0.1";
 
 #[derive(Debug, Error)]
