@@ -16,7 +16,6 @@ export const App = (): JSX.Element => {
 
 	useEffect(() => {
 		let live = true
-		setCheck({ phase: 'running' })
 		const runCheck = async (): Promise<void> => {
 			try {
 				const endpoint = await getEndpoint()
@@ -31,6 +30,11 @@ export const App = (): JSX.Element => {
 			live = false
 		}
 	}, [run])
+
+	const rerun = (): void => {
+		setCheck({ phase: 'running' })
+		setRun((n) => n + 1)
+	}
 
 	return (
 		<div className='app'>
@@ -57,7 +61,7 @@ export const App = (): JSX.Element => {
 					</dl>
 					<button
 						disabled={check.phase === 'running'}
-						onClick={() => setRun((n) => n + 1)}
+						onClick={rerun}
 					>
 						Run again
 					</button>
