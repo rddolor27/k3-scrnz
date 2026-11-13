@@ -1,4 +1,4 @@
-import type { JSX } from 'react'
+import type { JSX, ReactNode } from 'react'
 
 import { revealFile } from '../lib/ipc'
 import { error } from '../lib/log'
@@ -9,9 +9,13 @@ import { Icon } from './Icon'
 
 interface GridRecordBarProps {
 	serials: string[]
+	children?: ReactNode
 }
 
-export const GridRecordBar = ({ serials }: GridRecordBarProps): JSX.Element => {
+export const GridRecordBar = ({
+	serials,
+	children,
+}: GridRecordBarProps): JSX.Element => {
 	const { note, showNote } = useNote()
 	const recording = useGridRecording({ serials, showNote })
 	const revealPath = note?.revealPath ?? null
@@ -58,6 +62,8 @@ export const GridRecordBar = ({ serials }: GridRecordBarProps): JSX.Element => {
 					)}
 				</span>
 			)}
+			<span className='spacer' />
+			{children}
 		</div>
 	)
 }

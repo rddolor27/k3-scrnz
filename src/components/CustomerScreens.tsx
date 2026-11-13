@@ -65,6 +65,7 @@ interface CustomerScreensProps {
 	displays: DisplayInfo[]
 	compact?: boolean
 	maxSize?: number
+	share?: number
 }
 
 export const CustomerScreens = ({
@@ -72,8 +73,14 @@ export const CustomerScreens = ({
 	displays,
 	compact = false,
 	maxSize,
+	share,
 }: CustomerScreensProps): JSX.Element => (
-	<aside className='customer-panel'>
+	<aside
+		className='customer-panel'
+		style={
+			share === undefined ? undefined : { flexBasis: `${share * 100}%` }
+		}
+	>
 		{displays.map((display, index) => (
 			<ScreenView
 				key={display.id}
