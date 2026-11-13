@@ -14,6 +14,8 @@ import { ScreenView } from './ScreenView'
 
 const GRID_MAX_SIZE = 1280
 const GRID_CUSTOMER_MAX_SIZE = 640
+// Rust polls only the device of the visible tab, and the grid has none.
+const DISPLAYS_EVERY_MS = 5000
 // Must match the 30% flex-basis of `.customer-panel`.
 const CUSTOMER_SHARE = 0.3
 const MIN_SHARE = 0.15
@@ -250,7 +252,10 @@ export const DeviceGrid = ({
 		return (): void => observer.disconnect()
 	}, [])
 
-	const customers = useCustomerDisplaysOf(devices.map((d) => d.serial))
+	const customers = useCustomerDisplaysOf(
+		devices.map((d) => d.serial),
+		DISPLAYS_EVERY_MS,
+	)
 	const isWide = (serial: string): boolean =>
 		(customers[serial] ?? []).length > 0
 	const auto = autoRects(

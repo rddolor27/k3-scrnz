@@ -9,8 +9,12 @@ type CustomerDisplays = Readonly<Record<string, DisplayInfo[]>>
 
 const NO_DISPLAYS: DisplayInfo[] = []
 
+const sameIds = (a: DisplayInfo[], b: DisplayInfo[]): boolean =>
+	a.length === b.length && a.every((display, i) => display.id === b[i]?.id)
+
 export const useCustomerDisplaysOf = (
 	serials: readonly string[],
+	refreshMs = 0,
 ): CustomerDisplays => {
 	const [lists, setLists] = useState<CustomerDisplays>({})
 	const key = serials.join('\n')
@@ -19,14 +23,38 @@ export const useCustomerDisplaysOf = (
 		let live = true
 		const wanted = new Set(key === '' ? [] : key.split('\n'))
 		const gotEvent = new Set<string>()
+		const asking = new Set<string>()
 		const unlisteners: UnlistenFn[] = []
 		const put = (serial: string, displays: DisplayInfo[]): void => {
-			setLists((all) => ({
-				...Object.fromEntries(
-					Object.entries(all).filter(([s]) => wanted.has(s)),
-				),
-				[serial]: displays.filter((d) => d.customer),
-			}))
+			const customers = displays.filter((d) => d.customer)
+			setLists((all) => {
+				const known = all[serial]
+				if (known && sameIds(known, customers)) return all
+				return {
+					...Object.fromEntries(
+						Object.entries(all).filter(([s]) => wanted.has(s)),
+					),
+					[serial]: customers,
+				}
+			})
+		}
+		// One request per device at a time: a hung device must not pile them up.
+		const ask = (serial: string, refresh: boolean): void => {
+			if (asking.has(serial)) return
+			asking.add(serial)
+			getDisplays(serial)
+				.then((list) => {
+					if (live && (refresh || !gotEvent.has(serial))) {
+						put(serial, list)
+					}
+				})
+				.catch((e: unknown) => {
+					if (refresh) return
+					void error(
+						`listing displays of ${serial} failed: ${String(e)}`,
+					)
+				})
+				.finally(() => asking.delete(serial))
 		}
 		onDisplaysChanged((change) => {
 			if (!live || !wanted.has(change.serial)) return
@@ -37,22 +65,20 @@ export const useCustomerDisplaysOf = (
 				live ? unlisteners.push(unlisten) : unlisten(),
 			)
 			.catch(() => undefined)
-		for (const serial of wanted) {
-			getDisplays(serial)
-				.then((list) => {
-					if (live && !gotEvent.has(serial)) put(serial, list)
-				})
-				.catch((e: unknown) => {
-					void error(
-						`listing displays of ${serial} failed: ${String(e)}`,
-					)
-				})
-		}
+		for (const serial of wanted) ask(serial, false)
+		const timer =
+			refreshMs > 0
+				? window.setInterval(() => {
+						if (document.hidden) return
+						for (const serial of wanted) ask(serial, true)
+					}, refreshMs)
+				: 0
 		return (): void => {
 			live = false
+			window.clearInterval(timer)
 			unlisteners.forEach((unlisten) => unlisten())
 		}
-	}, [key])
+	}, [key, refreshMs])
 
 	return lists
 }
