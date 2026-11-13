@@ -7,10 +7,15 @@ import {
 } from 'react'
 
 import type { DeviceView } from '../lib/ipc'
+import { CustomerScreens, useCustomerDisplaysOf } from './CustomerScreens'
 import { GridRecordBar } from './GridRecordBar'
 import { ScreenView } from './ScreenView'
 
 const GRID_MAX_SIZE = 1280
+const GRID_CUSTOMER_MAX_SIZE = 640
+// Must match the 30% flex-basis of `.customer-panel`.
+const CUSTOMER_SHARE = 0.3
+const WIDE_FACTOR = 1 / (1 - CUSTOMER_SHARE)
 const GAP = 12
 const MIN_W = 280
 const MIN_H = 200
@@ -55,18 +60,46 @@ const saveSizes = (sizes: Record<string, Size>): void => {
 	}
 }
 
-const autoSize = (count: number, box: Size): Size => {
+const tileWidth = (unit: number, wide: boolean): number =>
+	Math.round(unit * (wide ? WIDE_FACTOR : 1))
+
+const rowsNeeded = (wide: boolean[], unit: number, boxW: number): number => {
+	let rows = 1
+	let used = 0
+	for (const isWide of wide) {
+		const w = tileWidth(unit, isWide)
+		if (used > 0 && used + GAP + w > boxW) {
+			rows += 1
+			used = w
+		} else {
+			used += (used > 0 ? GAP : 0) + w
+		}
+	}
+	return rows
+}
+
+const widestUnit = (wide: boolean[], rows: number, boxW: number): number => {
+	let low = MIN_W
+	const widest = wide.includes(true) ? WIDE_FACTOR : 1
+	let high = Math.max(MIN_W, Math.floor(boxW / widest))
+	while (low < high) {
+		const mid = Math.ceil((low + high) / 2)
+		if (rowsNeeded(wide, mid, boxW) <= rows) low = mid
+		else high = mid - 1
+	}
+	return low
+}
+
+const autoSize = (wide: boolean[], box: Size): Size => {
 	let best: Size = { w: MIN_W, h: MIN_H }
-	let bestArea = 0
-	for (let cols = 1; cols <= Math.max(1, count); cols += 1) {
-		const rows = Math.ceil(count / cols)
-		const w = Math.max(MIN_W, Math.floor((box.w - GAP * (cols - 1)) / cols))
+	let bestScale = 0
+	for (let rows = 1; rows <= Math.max(1, wide.length); rows += 1) {
+		const unit = widestUnit(wide, rows, box.w)
 		const h = Math.max(MIN_H, Math.floor((box.h - GAP * (rows - 1)) / rows))
-		const scale = Math.min(w / 16, (h - TILE_CHROME_H) / 9)
-		const area = scale * scale
-		if (area > bestArea) {
-			bestArea = area
-			best = { w, h }
+		const scale = Math.min(unit / 16, (h - TILE_CHROME_H) / 9)
+		if (scale > bestScale) {
+			bestScale = scale
+			best = { w: unit, h }
 		}
 	}
 	return best
@@ -95,10 +128,17 @@ export const DeviceGrid = ({
 		return (): void => observer.disconnect()
 	}, [])
 
-	const auto = autoSize(devices.length, box)
+	const customers = useCustomerDisplaysOf(devices.map((d) => d.serial))
+	const isWide = (serial: string): boolean =>
+		(customers[serial] ?? []).length > 0
+	const auto = autoSize(
+		devices.map((d) => isWide(d.serial)),
+		box,
+	)
 
 	const startResize = (
-		serial: string,
+		sizeKey: string,
+		minW: number,
 		e: ReactPointerEvent<HTMLDivElement>,
 	): void => {
 		const tile = e.currentTarget.parentElement
@@ -112,26 +152,26 @@ export const DeviceGrid = ({
 			w: rect.width,
 			h: rect.height,
 		}
-		const maxW = Math.max(MIN_W, box.w)
+		const maxW = Math.max(minW, box.w)
 		let next: Size = { w: rect.width, h: rect.height }
 		const onMove = (ev: PointerEvent): void => {
 			next = {
 				w: Math.round(
 					Math.min(
 						maxW,
-						Math.max(MIN_W, start.w + ev.clientX - start.x),
+						Math.max(minW, start.w + ev.clientX - start.x),
 					),
 				),
 				h: Math.round(Math.max(MIN_H, start.h + ev.clientY - start.y)),
 			}
-			setSizes((all) => ({ ...all, [serial]: next }))
+			setSizes((all) => ({ ...all, [sizeKey]: next }))
 		}
 		const onUp = (): void => {
 			window.removeEventListener('pointermove', onMove)
 			window.removeEventListener('pointerup', onUp)
 			window.removeEventListener('pointercancel', onUp)
 			setSizes((all) => {
-				const saved = { ...all, [serial]: next }
+				const saved = { ...all, [sizeKey]: next }
 				saveSizes(saved)
 				return saved
 			})
@@ -141,10 +181,10 @@ export const DeviceGrid = ({
 		window.addEventListener('pointercancel', onUp)
 	}
 
-	const resetSize = (serial: string): void => {
+	const resetSize = (sizeKey: string): void => {
 		setSizes((all) => {
 			const rest = Object.fromEntries(
-				Object.entries(all).filter(([key]) => key !== serial),
+				Object.entries(all).filter(([key]) => key !== sizeKey),
 			)
 			saveSizes(rest)
 			return rest
@@ -166,7 +206,15 @@ export const DeviceGrid = ({
 			<GridRecordBar serials={devices.map((device) => device.serial)} />
 			<div className='device-grid' ref={gridRef}>
 				{devices.map((device) => {
-					const size = sizes[device.serial] ?? auto
+					const wide = isWide(device.serial)
+					// A size saved for one screen would squeeze two.
+					const sizeKey = wide
+						? `${device.serial}/customer`
+						: device.serial
+					const size = sizes[sizeKey] ?? {
+						w: tileWidth(auto.w, wide),
+						h: auto.h,
+					}
 					return (
 						<div
 							className='grid-tile'
@@ -190,13 +238,25 @@ export const DeviceGrid = ({
 									</button>
 								}
 							/>
+							{wide && (
+								<CustomerScreens
+									serial={device.serial}
+									displays={customers[device.serial] ?? []}
+									compact
+									maxSize={GRID_CUSTOMER_MAX_SIZE}
+								/>
+							)}
 							<div
 								className='tile-resize'
 								title='Drag to resize · double-click to reset'
 								onPointerDown={(e) =>
-									startResize(device.serial, e)
+									startResize(
+										sizeKey,
+										tileWidth(MIN_W, wide),
+										e,
+									)
 								}
-								onDoubleClick={() => resetSize(device.serial)}
+								onDoubleClick={() => resetSize(sizeKey)}
 							/>
 						</div>
 					)

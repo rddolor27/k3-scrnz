@@ -690,13 +690,25 @@ export const ScreenView = ({
 					/>
 				</div>
 			) : (
-				<div className='screen-label'>
-					<span>{label ?? 'Customer screen'}</span>
+				<div
+					className={
+						compact ? 'screen-label compact' : 'screen-label'
+					}
+				>
+					<span
+						className='screen-name'
+						title={compact ? 'View only' : undefined}
+					>
+						{label ?? 'Customer screen'}
+					</span>
 					{captureButtons}
 					<span className='spacer' />
-					<span className='screen-stats'>
-						{size ? `${size.width}×${size.height} · ` : ''}view only
-					</span>
+					{!compact && (
+						<span className='screen-stats'>
+							{size ? `${size.width}×${size.height} · ` : ''}view
+							only
+						</span>
+					)}
 				</div>
 			)}
 			<div className='screen-host' ref={hostRef}>
