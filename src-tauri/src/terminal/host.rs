@@ -1,7 +1,5 @@
 use std::io::{Read, Write};
 use std::path::Path;
-#[cfg(windows)]
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
@@ -9,7 +7,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::adb;
 
-use super::{Input, Session, TerminalError};
+use super::{Input, Session, TerminalError, shell};
 
 const READ_CHUNK: usize = 16 * 1024;
 
@@ -18,13 +16,15 @@ pub fn spawn(
     mut input: UnboundedReceiver<Input>,
     close: UnboundedSender<Input>,
     cwd: &Path,
+    shell_id: Option<&str>,
     command: Option<&str>,
-) -> Result<(), TerminalError> {
+) -> Result<&'static str, TerminalError> {
     let (rows, cols) = session.size();
     let pair = native_pty_system()
         .openpty(pty_size(rows, cols))
         .map_err(spawn_error)?;
-    let mut cmd = shell_command(command);
+    let shell = shell::resolve(shell_id)?;
+    let mut cmd = shell.command(command)?;
     cmd.cwd(cwd);
     link_to_device(&mut cmd, &session.serial);
     let mut child = pair.slave.spawn_command(cmd).map_err(spawn_error)?;
@@ -79,7 +79,7 @@ pub fn spawn(
         drop(writer);
         drop(master);
     })?;
-    Ok(())
+    Ok(shell.id)
 }
 
 fn pty_size(rows: u16, cols: u16) -> PtySize {
@@ -101,38 +101,6 @@ fn thread(name: &str, body: impl FnOnce() + Send + 'static) -> Result<(), Termin
         .spawn(body)
         .map(drop)
         .map_err(spawn_error)
-}
-
-#[cfg(windows)]
-fn shell_command(command: Option<&str>) -> CommandBuilder {
-    let program = find_on_path("pwsh.exe").unwrap_or_else(|| PathBuf::from("powershell.exe"));
-    let mut cmd = CommandBuilder::new(program);
-    cmd.arg("-NoLogo");
-    if let Some(command) = command {
-        cmd.args(["-NoExit", "-Command", command]);
-    }
-    cmd
-}
-
-#[cfg(not(windows))]
-fn shell_command(command: Option<&str>) -> CommandBuilder {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_owned());
-    let mut cmd = CommandBuilder::new(&shell);
-    if let Some(command) = command {
-        let script = format!("{command}; exec \"$SHELL\" -i");
-        cmd.args(["-c", script.as_str()]);
-    } else {
-        cmd.arg("-i");
-    }
-    cmd
-}
-
-#[cfg(windows)]
-fn find_on_path(name: &str) -> Option<PathBuf> {
-    let paths = std::env::var_os("PATH")?;
-    std::env::split_paths(&paths)
-        .map(|dir| dir.join(name))
-        .find(|exe| exe.is_file())
 }
 
 /// `adb` must be the SDK's: another version restarts the shared server and drops every device.

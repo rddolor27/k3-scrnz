@@ -1,6 +1,7 @@
 mod device;
 mod host;
 mod project;
+mod shell;
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -14,6 +15,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 
 use project::ProjectKind;
+use shell::ShellInfo;
 
 const SCROLLBACK_BYTES: usize = 1024 * 1024;
 const VIEWER_QUEUE: usize = 1024;
@@ -35,7 +37,11 @@ pub enum TerminalError {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum TerminalSpec {
     Device,
-    Project { path: String, run: bool },
+    Project {
+        path: String,
+        run: bool,
+        shell: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -55,6 +61,7 @@ pub struct TerminalStarted {
     pub project: Option<ProjectKind>,
     pub command: Option<String>,
     pub cwd: Option<String>,
+    pub shell: Option<String>,
 }
 
 pub enum Input {
@@ -232,9 +239,10 @@ impl TerminalHub {
                     project: None,
                     command: None,
                     cwd: None,
+                    shell: None,
                 }
             }
-            TerminalSpec::Project { path, run } => {
+            TerminalSpec::Project { path, run, shell } => {
                 let project = project::inspect(PathBuf::from(path)).await?;
                 let command = run
                     .then(|| project::run_command(project.kind, &serial))
@@ -243,8 +251,15 @@ impl TerminalHub {
                 let spawned = Arc::clone(&session);
                 let spawn_command = command.clone();
                 let close = session.input.clone();
-                tauri::async_runtime::spawn_blocking(move || {
-                    host::spawn(spawned, rx, close, &project.path, spawn_command.as_deref())
+                let used = tauri::async_runtime::spawn_blocking(move || {
+                    host::spawn(
+                        spawned,
+                        rx,
+                        close,
+                        &project.path,
+                        shell.as_deref(),
+                        spawn_command.as_deref(),
+                    )
                 })
                 .await
                 .map_err(|e| TerminalError::Spawn(e.to_string()))??;
@@ -256,10 +271,11 @@ impl TerminalHub {
                     project: Some(project.kind),
                     command,
                     cwd: Some(cwd),
+                    shell: Some(used.to_owned()),
                 }
             }
         };
-        tracing::info!(id = %started.id, serial = %started.serial, kind = ?started.kind, "terminal started");
+        tracing::info!(id = %started.id, serial = %started.serial, kind = ?started.kind, shell = ?started.shell, "terminal started");
         lock(&self.sessions).insert(started.id.clone(), session);
         Ok(started)
     }
@@ -291,6 +307,13 @@ pub async fn start_terminal(
     spec: TerminalSpec,
 ) -> Result<TerminalStarted, String> {
     hub.start(serial, spec).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_terminal_shells() -> Result<Vec<ShellInfo>, String> {
+    tauri::async_runtime::spawn_blocking(shell::list)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

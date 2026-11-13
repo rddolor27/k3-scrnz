@@ -124,6 +124,7 @@ pub fn run() {
             logcat::set_app_package,
             stats::get_app_stats,
             terminal::start_terminal,
+            terminal::list_terminal_shells,
             terminal::stop_terminal,
             emulator::list_avds,
             emulator::start_emulator,
