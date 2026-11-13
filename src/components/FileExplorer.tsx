@@ -14,7 +14,6 @@ import {
 	type FileEntry,
 	type FileKind,
 	type FileLocation,
-	listDir,
 	listPackages,
 	makeDir,
 	revealFile,
@@ -22,27 +21,40 @@ import {
 	uploadPath,
 } from '../lib/ipc'
 import { error } from '../lib/log'
-import {
-	appDataRoot,
-	formatSize,
-	formatTime,
-	joinPath,
-	parentPath,
-} from '../lib/paths'
-import { useListing } from '../state/files'
+import { appDataRoot, formatSize, formatTime, joinPath } from '../lib/paths'
+import { type FolderState, useFileTree } from '../state/files'
+import { Icon, type IconName } from './Icon'
+import { IconButton } from './IconButton'
 
 const HOME: FileLocation = { path: '/sdcard', runAs: null }
-const QUICK_PATHS = ['/', '/sdcard', '/data/local/tmp']
-const ICON: Record<FileKind, string> = {
-	dir: '📁',
-	file: '📄',
-	link: '🔗',
-	other: '⚙️',
+const QUICK_PATHS = ['/sdcard', '/data/local/tmp', '/']
+const INDENT_PX = 16
+const NOTE_INDENT_PX = 24
+const NOT_A_FOLDER = /not a directory/i
+const KIND_ICON: Record<FileKind, IconName> = {
+	dir: 'folder',
+	file: 'file',
+	link: 'link',
+	other: 'special',
 }
 
 type Status =
 	| { kind: 'busy' | 'info' | 'error'; text: string }
 	| { kind: 'saved'; text: string; localPath: string }
+
+interface EntryRow {
+	type: 'entry'
+	key: string
+	path: string
+	parent: string
+	depth: number
+	entry: FileEntry
+}
+
+type Row =
+	| EntryRow
+	| { type: 'note'; key: string; depth: number; text: string; error: boolean }
+	| { type: 'create'; key: string; depth: number; parent: string }
 
 // Names with line breaks can't be addressed safely: shown, not acted on.
 const isActionable = (entry: FileEntry): boolean => !/[\n\r]/.test(entry.name)
@@ -50,26 +62,118 @@ const isActionable = (entry: FileEntry): boolean => !/[\n\r]/.test(entry.name)
 const baseName = (localPath: string): string =>
 	localPath.split(/[\\/]/).pop() ?? localPath
 
+const pointsToFile = (folder: FolderState | undefined): boolean =>
+	folder?.error != null && NOT_A_FOLDER.test(folder.error)
+
+const isExpandable = (
+	entry: FileEntry,
+	folder: FolderState | undefined,
+): boolean =>
+	entry.kind === 'dir' || (entry.kind === 'link' && !pointsToFile(folder))
+
+const isEntryRow = (row: Row): row is EntryRow => row.type === 'entry'
+
+const flatten = (
+	root: string,
+	folders: ReadonlyMap<string, FolderState>,
+	expanded: ReadonlySet<string>,
+	creatingIn: string | null,
+): Row[] => {
+	const rows: Row[] = []
+	const walk = (dir: string, depth: number): void => {
+		if (creatingIn === dir) {
+			rows.push({
+				type: 'create',
+				key: `${dir}#create`,
+				depth,
+				parent: dir,
+			})
+		}
+		const folder = folders.get(dir)
+		if (!folder || (folder.loading && folder.entries === null)) {
+			rows.push({
+				type: 'note',
+				key: `${dir}#loading`,
+				depth,
+				text: 'Loading…',
+				error: false,
+			})
+			return
+		}
+		if (folder.error !== null && !pointsToFile(folder)) {
+			rows.push({
+				type: 'note',
+				key: `${dir}#error`,
+				depth,
+				text: folder.error,
+				error: true,
+			})
+		}
+		const entries = folder.entries ?? []
+		if (folder.error === null && entries.length === 0) {
+			rows.push({
+				type: 'note',
+				key: `${dir}#empty`,
+				depth,
+				text: 'Empty folder',
+				error: false,
+			})
+		}
+		for (const entry of entries) {
+			const path = joinPath(dir, entry.name)
+			rows.push({
+				type: 'entry',
+				key: path,
+				path,
+				parent: dir,
+				depth,
+				entry,
+			})
+			if (expanded.has(path) && isExpandable(entry, folders.get(path))) {
+				walk(path, depth + 1)
+			}
+		}
+	}
+	walk(root, 0)
+	return rows
+}
+
 interface FileExplorerProps {
 	serial: string
 }
 
 export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
-	const [location, setLocation] = useState<FileLocation>(HOME)
-	const [reload, setReload] = useState(0)
-	const { listing, listedAt, loading } = useListing(serial, location, reload)
+	const [root, setRoot] = useState<FileLocation>(HOME)
+	const tree = useFileTree(serial, root)
 	const [selected, setSelected] = useState<string | null>(null)
 	const [status, setStatus] = useState<Status | null>(null)
 	const [confirming, setConfirming] = useState<string | null>(null)
-	const [creatingFolder, setCreatingFolder] = useState(false)
+	const [creatingIn, setCreatingIn] = useState<string | null>(null)
 	const [dragging, setDragging] = useState(false)
 	const fileInput = useRef<HTMLInputElement>(null)
 	const listRef = useRef<HTMLDivElement>(null)
-	const locationRef = useRef(location)
+	const dropTarget = useRef<FileLocation>(root)
+	const reloadRef = useRef(tree.reload)
+
+	const rows = flatten(root.path, tree.folders, tree.expanded, creatingIn)
+	const entryRows = rows.filter(isEntryRow)
+	const selectedRow = entryRows.find((r) => r.path === selected) ?? null
+	const busy = status?.kind === 'busy'
+	const actionRow =
+		!busy && selectedRow && isActionable(selectedRow.entry)
+			? selectedRow
+			: null
+	const targetDir = selectedRow
+		? selectedRow.entry.kind === 'dir'
+			? selectedRow.path
+			: selectedRow.parent
+		: root.path
+	const at = (path: string): FileLocation => ({ path, runAs: root.runAs })
 
 	useEffect(() => {
-		locationRef.current = location
-	}, [location])
+		dropTarget.current = { path: targetDir, runAs: root.runAs }
+		reloadRef.current = tree.reload
+	})
 
 	useEffect(() => {
 		listRef.current
@@ -81,7 +185,7 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 		let live = true
 		let unlisten: (() => void) | null = null
 		const uploadDropped = async (paths: string[]): Promise<void> => {
-			const dir = locationRef.current
+			const dir = dropTarget.current
 			setStatus({
 				kind: 'busy',
 				text: `Uploading ${paths.length} file(s)…`,
@@ -94,7 +198,7 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 					failed.push(`${baseName(path)}: ${String(e)}`)
 				}
 			}
-			setReload((n) => n + 1)
+			reloadRef.current(dir.path)
 			const done = paths.length - failed.length
 			setStatus(
 				failed.length === 0
@@ -138,37 +242,15 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 		}
 	}, [serial])
 
-	const busy = status?.kind === 'busy'
-	const idle = !loading && !busy
-	// Rows belong to the listed folder, which differs from `location` while loading.
-	const rowsAt = listedAt ?? location
-	const entryAt = (name: string): FileLocation => ({
-		path: joinPath(rowsAt.path, name),
-		runAs: rowsAt.runAs,
-	})
-	const selectedEntry =
-		listing?.entries.find((e) => e.name === selected) ?? null
-	const actionTarget =
-		idle && selectedEntry && isActionable(selectedEntry)
-			? selectedEntry
-			: null
-	const atAppRoot =
-		location.runAs !== null && location.path === appDataRoot(location.runAs)
-	const canGoUp = location.path !== '/' && !atAppRoot
-
-	const refresh = (): void => setReload((n) => n + 1)
 	const focusList = (): void => listRef.current?.focus()
-	const go = (next: FileLocation): void => {
-		setLocation(next)
+
+	const changeRoot = (next: FileLocation): void => {
+		setRoot(next)
 		setSelected(null)
 		setConfirming(null)
-		setCreatingFolder(false)
+		setCreatingIn(null)
 	}
-	const goUp = (): void => {
-		if (canGoUp) {
-			go({ path: parentPath(location.path), runAs: location.runAs })
-		}
-	}
+
 	const submitPath = (raw: string): void => {
 		const path = raw.trim().replace(/\/+$/, '') || '/'
 		if (!path.startsWith('/') || path.split('/').includes('..')) {
@@ -178,7 +260,7 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 			})
 			return
 		}
-		go({ path, runAs: location.runAs })
+		changeRoot({ path, runAs: root.runAs })
 	}
 
 	const run = async (
@@ -194,77 +276,64 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 		}
 	}
 
-	const download = (entry: FileEntry): void => {
-		const target = entryAt(entry.name)
-		void run(`Downloading ${entry.name}…`, async () => {
-			const localPath = await downloadFile(serial, target)
-			return { kind: 'saved', text: `Saved ${entry.name}`, localPath }
+	const download = (row: EntryRow): void => {
+		void run(`Downloading ${row.entry.name}…`, async () => {
+			const localPath = await downloadFile(serial, at(row.path))
+			return { kind: 'saved', text: `Saved ${row.entry.name}`, localPath }
 		})
 	}
 
-	const open = (entry: FileEntry): void => {
-		if (!isActionable(entry)) return
-		const target = entryAt(entry.name)
-		if (entry.kind === 'dir') go(target)
-		else if (entry.kind === 'file') download(entry)
-		else if (entry.kind === 'link') {
-			listDir(serial, target)
-				.then((probe) => {
-					if (probe.error && /not a directory/i.test(probe.error)) {
-						download(entry)
-					} else go(target)
-				})
-				.catch((e: unknown) =>
-					setStatus({ kind: 'error', text: String(e) }),
-				)
-		}
+	const open = (row: EntryRow): void => {
+		if (!isActionable(row.entry)) return
+		const folder = tree.folders.get(row.path)
+		if (row.entry.kind === 'file' || pointsToFile(folder)) download(row)
+		else if (isExpandable(row.entry, folder)) tree.toggle(row.path)
 	}
 
-	const remove = (entry: FileEntry): void => {
-		const target = entryAt(entry.name)
+	const remove = (row: EntryRow): void => {
 		setConfirming(null)
-		void run(`Deleting ${entry.name}…`, async () => {
-			await deletePath(serial, target)
+		void run(`Deleting ${row.entry.name}…`, async () => {
+			await deletePath(serial, at(row.path))
 			setSelected(null)
-			refresh()
-			return { kind: 'info', text: `Deleted ${target.path}` }
+			tree.reload(row.parent)
+			return { kind: 'info', text: `Deleted ${row.path}` }
 		})
 		focusList()
 	}
 
-	const createFolder = (name: string): void => {
-		setCreatingFolder(false)
-		const target = {
-			path: joinPath(location.path, name),
-			runAs: location.runAs,
-		}
+	const startCreate = (): void => {
+		setCreatingIn(targetDir)
+		if (targetDir !== root.path) tree.expand(targetDir)
+	}
+
+	const createFolder = (dir: string, name: string): void => {
+		setCreatingIn(null)
+		const path = joinPath(dir, name)
 		void run(`Creating ${name}…`, async () => {
-			await makeDir(serial, target)
-			refresh()
-			return { kind: 'info', text: `Created ${target.path}` }
+			await makeDir(serial, at(path))
+			tree.reload(dir)
+			setSelected(path)
+			return { kind: 'info', text: `Created ${path}` }
 		})
 		focusList()
 	}
 
 	const uploadPicked = (files: File[]): void => {
-		const dir = location
+		const dir = targetDir
 		void run(`Uploading ${files.length} file(s)…`, async () => {
 			const failed: string[] = []
 			for (const file of files) {
 				try {
 					const bytes = new Uint8Array(await file.arrayBuffer())
-					await uploadBytes(serial, dir, file.name, bytes)
+					await uploadBytes(serial, at(dir), file.name, bytes)
 				} catch (e) {
 					failed.push(`${file.name}: ${String(e)}`)
 				}
 			}
-			refresh()
+			tree.reload(dir)
 			const done = files.length - failed.length
 			return failed.length === 0
-				? {
-						kind: 'info',
-						text: `Uploaded ${done} file(s) to ${dir.path}`,
-					}
+				? { kind: 'info', text: `Uploaded ${done} file(s) to ${dir}` }
 				: {
 						kind: 'error',
 						text: `Uploaded ${done} of ${files.length}. ${failed.join(' · ')}`,
@@ -272,116 +341,153 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 		})
 	}
 
-	const copyPath = (entry: FileEntry): void => {
-		const { path } = entryAt(entry.name)
+	const copyPath = (row: EntryRow): void => {
 		void run('Copying path…', async () => {
-			await writeText(path)
-			return { kind: 'info', text: `Copied ${path}` }
+			await writeText(row.path)
+			return { kind: 'info', text: `Copied ${row.path}` }
 		})
 	}
 
 	const onListKey = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
-		if (e.target !== e.currentTarget || !idle) return
-		const entries = listing?.entries ?? []
+		if (e.target !== e.currentTarget || busy) return
+		const index = entryRows.findIndex((r) => r.path === selected)
+		const select = (row: EntryRow | undefined): void => {
+			if (row) setSelected(row.path)
+		}
 		if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
 			e.preventDefault()
-			const index = entries.findIndex((x) => x.name === selected)
 			const step = e.key === 'ArrowDown' ? 1 : -1
-			const next =
-				entries[Math.min(entries.length - 1, Math.max(0, index + step))]
-			if (next) setSelected(next.name)
-		} else if (e.key === 'Enter' && !e.repeat && selectedEntry) {
-			open(selectedEntry)
-		} else if (e.key === 'Backspace') {
+			select(
+				entryRows[
+					Math.min(entryRows.length - 1, Math.max(0, index + step))
+				],
+			)
+		} else if (e.key === 'ArrowRight' && selectedRow) {
 			e.preventDefault()
-			goUp()
-		} else if (e.key === 'Delete' && actionTarget) {
-			setConfirming(entryAt(actionTarget.name).path)
+			const folder = tree.folders.get(selectedRow.path)
+			if (!isExpandable(selectedRow.entry, folder)) return
+			if (!tree.expanded.has(selectedRow.path))
+				tree.expand(selectedRow.path)
+			else select(entryRows.find((r) => r.parent === selectedRow.path))
+		} else if (e.key === 'ArrowLeft' && selectedRow) {
+			e.preventDefault()
+			if (tree.expanded.has(selectedRow.path))
+				tree.collapse(selectedRow.path)
+			else select(entryRows.find((r) => r.path === selectedRow.parent))
+		} else if (e.key === 'Enter' && !e.repeat && selectedRow) {
+			open(selectedRow)
+		} else if (e.key === 'Delete' && actionRow) {
+			setConfirming(actionRow.path)
+		} else if (e.key === 'F5') {
+			e.preventDefault()
+			tree.refresh()
 		} else if (e.key === 'Escape') {
 			setConfirming(null)
+			setCreatingIn(null)
 		}
 	}
 
-	const confirmTarget =
-		actionTarget && confirming === entryAt(actionTarget.name).path
-			? actionTarget
-			: null
+	const confirmRow =
+		actionRow && confirming === actionRow.path ? actionRow : null
 
 	return (
 		<div className='explorer'>
 			<div className='explorer-bar'>
-				<button
-					onClick={goUp}
-					disabled={!canGoUp}
-					title='Up (Backspace)'
+				<span
+					className='tool-group'
+					role='group'
+					aria-label='Folder to browse'
 				>
-					↑
-				</button>
-				<button onClick={refresh} title='Refresh'>
-					⟳
-				</button>
+					{QUICK_PATHS.map((path) => (
+						<button
+							key={path}
+							aria-pressed={
+								root.runAs === null && root.path === path
+							}
+							onClick={() => changeRoot({ path, runAs: null })}
+						>
+							{path}
+						</button>
+					))}
+				</span>
 				<PathInput
-					key={`${location.runAs ?? ''}:${location.path}`}
-					path={location.path}
+					key={`${root.runAs ?? ''}:${root.path}`}
+					path={root.path}
 					onSubmit={submitPath}
 				/>
-				{location.runAs && (
+				<AppDataPicker
+					serial={serial}
+					onOpen={(pkg) =>
+						changeRoot({ path: appDataRoot(pkg), runAs: pkg })
+					}
+				/>
+				{root.runAs && (
 					<>
 						<span
 							className='badge wait'
 							title='Private app data, read through run-as'
 						>
-							run-as {location.runAs}
+							run-as {root.runAs}
 						</span>
-						<button onClick={() => go(HOME)}>Leave app data</button>
+						<button onClick={() => changeRoot(HOME)}>
+							Leave app data
+						</button>
 					</>
 				)}
 			</div>
 			<div className='explorer-bar'>
-				{QUICK_PATHS.map((path) => (
-					<button
-						key={path}
-						onClick={() => go({ path, runAs: null })}
-					>
-						{path}
-					</button>
-				))}
-				<AppDataPicker
-					serial={serial}
-					onOpen={(pkg) => go({ path: appDataRoot(pkg), runAs: pkg })}
-				/>
-				<span className='spacer' />
-				<button
-					disabled={!idle}
-					onClick={() => setCreatingFolder(true)}
+				<span className='tool-group'>
+					<IconButton
+						icon='refresh'
+						label='Refresh'
+						hint='Refresh (F5)'
+						onClick={tree.refresh}
+					/>
+					<IconButton
+						icon='collapse'
+						label='Collapse all'
+						disabled={tree.expanded.size === 0}
+						onClick={tree.collapseAll}
+					/>
+				</span>
+				<span
+					className='explorer-target'
+					title='New folders, uploads and dropped files go here'
 				>
+					<Icon name='folderOpen' />
+					<code>{targetDir}</code>
+				</span>
+				<span className='spacer' />
+				<button disabled={busy} onClick={startCreate}>
+					<Icon name='folderPlus' />
 					New folder
 				</button>
 				<button
-					disabled={!idle}
+					disabled={busy}
 					onClick={() => fileInput.current?.click()}
 				>
+					<Icon name='upload' />
 					Upload…
 				</button>
 				<button
-					disabled={actionTarget?.kind !== 'file'}
-					onClick={() => actionTarget && download(actionTarget)}
+					disabled={actionRow?.entry.kind !== 'file'}
+					onClick={() => actionRow && download(actionRow)}
 				>
+					<Icon name='download' />
 					Download
 				</button>
 				<button
-					disabled={!actionTarget}
-					onClick={() =>
-						actionTarget &&
-						setConfirming(entryAt(actionTarget.name).path)
-					}
+					disabled={!actionRow}
+					onClick={() => actionRow && setConfirming(actionRow.path)}
 				>
+					<Icon name='trash' />
 					Delete
 				</button>
 				<button
-					disabled={!actionTarget}
-					onClick={() => actionTarget && copyPath(actionTarget)}
+					disabled={!actionRow}
+					onClick={() => actionRow && copyPath(actionRow)}
 				>
+					<Icon name='copy' />
 					Copy path
 				</button>
 				<input
@@ -397,7 +503,7 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 				/>
 			</div>
 
-			{confirmTarget && (
+			{confirmRow && (
 				<div
 					className='confirm'
 					onKeyDown={(e) => {
@@ -408,16 +514,17 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 					}}
 				>
 					<span>
-						Delete <code>{entryAt(confirmTarget.name).path}</code>
-						{confirmTarget.kind === 'dir'
+						Delete <code>{confirmRow.path}</code>
+						{confirmRow.entry.kind === 'dir'
 							? ' and everything in it'
 							: ''}
 						? This can't be undone.
 					</span>
 					<button
 						className='danger'
-						onClick={() => remove(confirmTarget)}
+						onClick={() => remove(confirmRow)}
 					>
+						<Icon name='trash' />
 						Delete
 					</button>
 					<button
@@ -431,15 +538,14 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 					</button>
 				</div>
 			)}
-			{listing?.error && <p className='hint bad'>{listing.error}</p>}
 
 			<div
 				ref={listRef}
-				className={loading ? 'file-list loading' : 'file-list'}
+				className='file-list'
 				tabIndex={0}
 				onKeyDown={onListKey}
 			>
-				<table>
+				<table role='treegrid' aria-label='Device files'>
 					<thead>
 						<tr>
 							<th>Name</th>
@@ -449,56 +555,81 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 						</tr>
 					</thead>
 					<tbody>
-						{creatingFolder && (
-							<tr>
-								<td colSpan={4}>
-									<FolderNameInput
-										onDone={(name) => {
-											if (name) createFolder(name)
-											else {
-												setCreatingFolder(false)
-												focusList()
-											}
-										}}
+						{rows.map((row) => {
+							if (row.type === 'entry') {
+								const folder = tree.folders.get(row.path)
+								const expandable = isExpandable(
+									row.entry,
+									folder,
+								)
+								return (
+									<TreeRow
+										key={row.key}
+										row={row}
+										selected={row.path === selected}
+										expandable={expandable}
+										open={
+											expandable &&
+											tree.expanded.has(row.path)
+										}
+										onSelect={() => setSelected(row.path)}
+										onToggle={() => tree.toggle(row.path)}
+										onOpen={() => open(row)}
 									/>
-								</td>
-							</tr>
-						)}
-						{listing?.entries.map((entry) => (
-							<tr
-								key={entry.name}
-								className={
-									entry.name === selected
-										? 'selected'
-										: undefined
-								}
-								onClick={() => setSelected(entry.name)}
-								onDoubleClick={() => open(entry)}
-							>
-								<td className='name'>
-									<span className='icon'>
-										{ICON[entry.kind]}
-									</span>
-									{entry.name}
-								</td>
-								<td className='num'>
-									{entry.kind === 'file'
-										? formatSize(entry.size)
-										: ''}
-								</td>
-								<td>{formatTime(entry.modified)}</td>
-								<td className='mode'>{entry.mode}</td>
-							</tr>
-						))}
+								)
+							}
+							const indent =
+								row.depth * INDENT_PX + NOTE_INDENT_PX
+							if (row.type === 'create') {
+								return (
+									<tr key={row.key}>
+										<td colSpan={4}>
+											<div
+												className='tree-name'
+												style={{ paddingLeft: indent }}
+											>
+												<Icon name='folderPlus' />
+												<FolderNameInput
+													onDone={(name) => {
+														if (name) {
+															createFolder(
+																row.parent,
+																name,
+															)
+														} else {
+															setCreatingIn(null)
+															focusList()
+														}
+													}}
+												/>
+											</div>
+										</td>
+									</tr>
+								)
+							}
+							return (
+								<tr
+									key={row.key}
+									className={
+										row.error
+											? 'tree-note err'
+											: 'tree-note'
+									}
+								>
+									<td
+										colSpan={4}
+										style={{ paddingLeft: indent + 10 }}
+									>
+										{row.text}
+									</td>
+								</tr>
+							)
+						})}
 					</tbody>
 				</table>
-				{!listing && <p className='muted list-note'>Loading…</p>}
-				{listing && listing.entries.length === 0 && !listing.error && (
-					<p className='muted list-note'>Empty folder</p>
-				)}
 				{dragging && (
 					<div className='drop-overlay'>
-						Drop to upload to {location.path}
+						Drop to upload into {targetDir}
 					</div>
 				)}
 			</div>
@@ -506,6 +637,76 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 		</div>
 	)
 }
+
+interface TreeRowProps {
+	row: EntryRow
+	selected: boolean
+	expandable: boolean
+	open: boolean
+	onSelect: () => void
+	onToggle: () => void
+	onOpen: () => void
+}
+
+const TreeRow = ({
+	row,
+	selected,
+	expandable,
+	open,
+	onSelect,
+	onToggle,
+	onOpen,
+}: TreeRowProps): JSX.Element => (
+	<tr
+		className={selected ? 'selected' : undefined}
+		aria-level={row.depth + 1}
+		aria-expanded={expandable ? open : undefined}
+		aria-selected={selected}
+		onClick={onSelect}
+		onDoubleClick={onOpen}
+	>
+		<td className='name'>
+			<div
+				className='tree-name'
+				style={{ paddingLeft: row.depth * INDENT_PX }}
+			>
+				{expandable ? (
+					<button
+						className='tree-toggle'
+						tabIndex={-1}
+						aria-label={`${open ? 'Collapse' : 'Expand'} ${row.entry.name}`}
+						onClick={(e) => {
+							e.stopPropagation()
+							onSelect()
+							onToggle()
+						}}
+						onDoubleClick={(e) => e.stopPropagation()}
+					>
+						<Icon
+							name={open ? 'chevronDown' : 'chevronRight'}
+							size={14}
+						/>
+					</button>
+				) : (
+					<span className='tree-toggle' aria-hidden='true' />
+				)}
+				<Icon
+					name={
+						row.entry.kind === 'dir' && open
+							? 'folderOpen'
+							: KIND_ICON[row.entry.kind]
+					}
+				/>
+				<span className='file-name'>{row.entry.name}</span>
+			</div>
+		</td>
+		<td className='num'>
+			{row.entry.kind === 'file' ? formatSize(row.entry.size) : ''}
+		</td>
+		<td>{formatTime(row.entry.modified)}</td>
+		<td className='mode'>{row.entry.mode}</td>
+	</tr>
+)
 
 interface PathInputProps {
 	path: string
@@ -517,7 +718,8 @@ const PathInput = ({ path, onSubmit }: PathInputProps): JSX.Element => {
 	return (
 		<input
 			className='path-input'
-			aria-label='Device path'
+			aria-label='Folder to browse'
+			title='Type a device path and press Enter'
 			spellCheck={false}
 			value={value}
 			onChange={(e) => setValue(e.target.value)}
@@ -623,8 +825,9 @@ const StatusLine = ({ status }: StatusLineProps): JSX.Element => {
 	if (!status) {
 		return (
 			<div className='explorer-status muted'>
-				Double-click a folder to open it or a file to download it. Drop
-				files here to upload them.
+				Click the arrow next to a folder to open it in place.
+				Double-click a file to download it. Drop files here to upload
+				them into the folder shown above the list.
 			</div>
 		)
 	}
