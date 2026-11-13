@@ -9,22 +9,44 @@ A lightweight Windows desktop app for testing Android devices over USB. It gives
 
 Built with Tauri 2 (Rust and React/TypeScript). It talks to the adb server that is already running on `127.0.0.1:5037`, and it mirrors screens with scrcpy-server 5.0.1.
 
-## Prerequisites
+## Features
+
+- **Device tabs.** One tab per connected device or emulator, with a live mirror you can click, type and scroll in, plus Back, Home, Recents, power, volume and rotate buttons.
+- **Customer screen.** A second (presentation) display is detected and mirrored next to the main screen, view-only.
+- **All devices.** Every device as a tile on one board. Drag a tile by its header, resize it from any side, drag the divider between its two screens, and record the whole board as one MP4.
+- **Logcat.** Live, filtered by level, tag, text or regex, and by the app you pick.
+- **Capture.** Screenshots (saved and copied to the clipboard) and MP4 recordings of any screen.
+- **Files.** A tree of the device's files with upload, download, new folder and delete, including app data of debuggable apps.
+- **Apps.** Drop an `.apk` on a screen to install it; restart, force-stop or clear the data of the selected app.
+- **Terminal.** A device shell, or a terminal in a project folder that already targets the device (`ANDROID_SERIAL` is set and the SDK's adb comes first on `PATH`). Choose PowerShell, Git Bash or Command Prompt. React Native and Expo projects start building right away.
+- **Emulators.** Start and stop your Android Virtual Devices from the top bar.
+
+## Install
+
+1. Install the Android SDK platform-tools (they come with Android Studio). tri.scrnz uses the SDK's adb and never ships its own. It finds the SDK through `ANDROID_HOME`, `ANDROID_SDK_ROOT` or `%LOCALAPPDATA%\Android\Sdk`.
+2. Download the installer (`tri.scrnz_<version>_x64-setup.exe`) from the [Releases](https://github.com/rddolor27/k3-scrnz/releases) page and run it. The installer is not code-signed, so Windows SmartScreen may ask you to confirm.
+3. Turn on USB debugging on the device, connect it over USB and accept the debugging prompt.
+
+Requires Windows 10 or 11 with the WebView2 Runtime (part of Windows 11; the installer downloads it on Windows 10 if it is missing).
+
+## Build from source
+
+You need:
 
 - Windows 10/11 with the WebView2 Runtime
 - Visual Studio Build Tools 2022 ("Desktop development with C++")
 - Rust stable with the MSVC toolchain (`rustup default stable-msvc`)
 - Node.js 24 and pnpm 10
-- Android SDK platform-tools. The app uses the SDK's adb server and never ships its own adb.
+- Android SDK platform-tools
 
-## Develop
+### Develop
 
 ```sh
 pnpm install
 pnpm tauri dev
 ```
 
-## Build
+### Build
 
 ```sh
 pnpm tauri build
