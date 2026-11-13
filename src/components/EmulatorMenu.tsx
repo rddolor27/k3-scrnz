@@ -2,6 +2,7 @@ import { type JSX, useEffect, useRef, useState } from 'react'
 
 import { type Avd, listAvds, startEmulator, stopEmulator } from '../lib/ipc'
 import { info, warn } from '../lib/log'
+import { Icon } from './Icon'
 
 const REFRESH_MS = 3000
 
@@ -89,7 +90,9 @@ export const EmulatorMenu = ({ onOpen }: EmulatorMenuProps): JSX.Element => {
 				aria-expanded={open}
 				title='Boot an Android emulator inside tri.scrnz'
 			>
-				＋ Emulator
+				<Icon name='phone' />
+				Emulator
+				<Icon name='chevronDown' />
 			</button>
 			{open && (
 				<div className='emulator-popover' role='dialog'>

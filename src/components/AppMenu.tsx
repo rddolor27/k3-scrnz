@@ -6,6 +6,7 @@ import { setAppPackage } from '../lib/logcat'
 import { useAppPackage } from '../state/app-package'
 import { useNote } from '../state/note'
 import { AppPicker } from './AppPicker'
+import { Icon } from './Icon'
 
 const CONFIRM_MS = 4000
 const APK_ACCEPT = '.apk,application/vnd.android.package-archive'
@@ -127,7 +128,8 @@ export const AppMenu = ({ serial }: AppMenuProps): JSX.Element => {
 				aria-haspopup='menu'
 				title={appPackage ?? 'Choose the app you are testing'}
 			>
-				App ▾
+				{appPackage ? 'App' : 'Choose app'}
+				<Icon name='chevronDown' />
 			</button>
 			{popover}
 			{note && (

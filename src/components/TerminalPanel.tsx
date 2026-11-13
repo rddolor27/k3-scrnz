@@ -21,6 +21,7 @@ import {
 	typeInto,
 	useDeviceTerminals,
 } from '../state/terminals'
+import { Icon } from './Icon'
 import { TerminalView } from './TerminalView'
 
 const PACKAGE_PATTERN = /^[A-Za-z]\w*(\.[A-Za-z]\w*)+$/
@@ -164,6 +165,13 @@ export const TerminalPanel = ({
 								title={s.cwd ?? `Shell on ${deviceName}`}
 								onClick={() => activateTerminal(serial, s.id)}
 							>
+								<Icon
+									name={
+										s.kind === 'device'
+											? 'terminal'
+											: 'folder'
+									}
+								/>
 								{s.title}
 							</button>
 							<button
@@ -172,7 +180,7 @@ export const TerminalPanel = ({
 								title='Close this terminal'
 								onClick={() => close(s.id)}
 							>
-								×
+								<Icon name='close' size={14} />
 							</button>
 						</span>
 					))}
@@ -181,9 +189,11 @@ export const TerminalPanel = ({
 					disabled={busy}
 					onClick={() => start({ kind: 'device' }, null)}
 				>
-					+ Device shell
+					<Icon name='terminal' />
+					Device shell
 				</button>
 				<button disabled={busy} onClick={pickFolder}>
+					<Icon name='folderOpen' />
 					Open project folder…
 				</button>
 			</div>
@@ -222,6 +232,7 @@ export const TerminalPanel = ({
 										)
 									}
 								>
+									<Icon name='play' />
 									Run again
 								</button>
 							)}

@@ -924,14 +924,6 @@ code {
 	border-color: var(--accent);
 }
 
-.file-list.loading table {
-	opacity: 0.55;
-}
-
-.file-list.loading tbody {
-	pointer-events: none;
-}
-
 .file-list table {
 	width: 100%;
 	border-collapse: collapse;
@@ -973,8 +965,67 @@ code {
 	text-overflow: ellipsis;
 }
 
-.file-list .icon {
-	margin-right: 8px;
+.tree-name {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+}
+
+.tree-name > .icon {
+	color: var(--muted);
+}
+
+.file-list .tree-toggle {
+	display: inline-grid;
+	flex: none;
+	place-items: center;
+	width: 18px;
+	height: 18px;
+	padding: 0;
+	border: 0;
+	border-radius: 4px;
+	background: none;
+	color: var(--muted);
+}
+
+.file-list button.tree-toggle:hover {
+	background: var(--panel);
+	color: var(--text);
+}
+
+.file-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.file-list .tree-note td {
+	color: var(--muted);
+	font-size: 12px;
+}
+
+.file-list .tree-note.err td {
+	color: var(--bad);
+}
+
+.explorer-target {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	overflow: hidden;
+	max-width: 420px;
+	color: var(--muted);
+	white-space: nowrap;
+}
+
+.explorer-target code {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.explorer .tool-group > button[aria-pressed='true'] {
+	background: var(--panel-raised);
+	color: var(--accent);
 }
 
 .file-list .num {
@@ -1041,4 +1092,75 @@ code {
 
 .warn {
 	color: var(--wait);
+}
+
+.icon {
+	display: block;
+	flex: none;
+}
+
+button:has(> .icon) {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+}
+
+button.icon-button {
+	padding-inline: 7px;
+}
+
+.tool-group {
+	display: inline-flex;
+}
+
+.tool-group > button {
+	margin-left: -1px;
+	border-radius: 0;
+}
+
+.tool-group > button:first-child {
+	margin-left: 0;
+	border-radius: 5px 0 0 5px;
+}
+
+.tool-group > button:last-child {
+	border-radius: 0 5px 5px 0;
+}
+
+.tool-group > button:only-child {
+	border-radius: 5px;
+}
+
+.tool-group > button:hover:not(:disabled),
+.tool-group > button:focus-visible {
+	position: relative;
+	z-index: 1;
+}
+
+.record-button .icon {
+	color: var(--bad);
+}
+
+.screen-stats {
+	color: var(--muted);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+
+.screen-main .screen-canvas:focus-visible {
+	outline: none;
+}
+
+::selection {
+	background: rgb(76 141 255 / 35%);
+}
+
+html {
+	scrollbar-color: #3a3f47 transparent;
 }

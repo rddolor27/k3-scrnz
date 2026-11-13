@@ -119,7 +119,6 @@ export const LogcatPanel = ({ serial }: LogcatPanelProps): JSX.Element => {
 	return (
 		<section className='logcat' aria-label='Logcat'>
 			<div className='logcat-bar'>
-				<span className='logcat-title'>Logcat</span>
 				<select
 					aria-label='Minimum level'
 					title='Minimum level'
@@ -177,7 +176,7 @@ export const LogcatPanel = ({ serial }: LogcatPanelProps): JSX.Element => {
 					className='logcat-check'
 					title={
 						!appName
-							? 'Choose your app in App ▾ first'
+							? 'Choose your app in the App menu first'
 							: notFound
 								? `${appName} wasn't found on this device`
 								: undefined

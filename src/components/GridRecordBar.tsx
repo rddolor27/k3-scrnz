@@ -5,6 +5,7 @@ import { error } from '../lib/log'
 import { useGridRecording } from '../state/grid-recording'
 import { useNote } from '../state/note'
 import { RecordingTimer } from './CaptureButtons'
+import { Icon } from './Icon'
 
 interface GridRecordBarProps {
 	serials: string[]
@@ -25,11 +26,13 @@ export const GridRecordBar = ({ serials }: GridRecordBarProps): JSX.Element => {
 		<div className='screen-toolbar grid-bar'>
 			{recording.since === null ? (
 				<button
+					className='record-button'
 					onClick={recording.toggle}
 					disabled={recording.busy}
 					title='Record all tiles as one MP4'
 				>
-					⏺ Record grid
+					<Icon name='record' />
+					Record grid
 				</button>
 			) : (
 				<button
@@ -38,7 +41,8 @@ export const GridRecordBar = ({ serials }: GridRecordBarProps): JSX.Element => {
 					disabled={recording.busy}
 					title='Stop recording'
 				>
-					⏹ <RecordingTimer since={recording.since} />
+					<Icon name='stop' />
+					<RecordingTimer since={recording.since} />
 				</button>
 			)}
 			{note && (

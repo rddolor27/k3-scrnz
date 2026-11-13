@@ -2,6 +2,7 @@ import { type JSX, useRef, useState } from 'react'
 
 import { stateLabel, stateTone } from '../lib/device-state'
 import type { DeviceView } from '../lib/ipc'
+import { Icon } from './Icon'
 
 interface DeviceTabsProps {
 	devices: DeviceView[]
@@ -34,10 +35,11 @@ export const DeviceTabs = ({
 					role='tab'
 					aria-selected={gridSelected}
 					className='tab tab-grid'
-					title='Every connected POS in one view'
+					title='Every connected device in one view'
 					onClick={onSelectGrid}
 				>
-					⊞ All devices
+					<Icon name='devices' />
+					All devices
 				</button>
 			)}
 			{devices.map((device, index) => {

@@ -24,8 +24,9 @@ import { useApkDrop } from '../state/apk-drop'
 import { useNote } from '../state/note'
 import { useScreenCapture } from '../state/screen-capture'
 import { registerTap } from '../video/frame-taps'
-import type { WorkerEvent, WorkerInit } from '../video/protocol'
+import type { WorkerEvent, WorkerInit, WorkerRequest } from '../video/protocol'
 import { CaptureButtons } from './CaptureButtons'
+import { IconButton } from './IconButton'
 
 const IDLE_AFTER_MS = 3000
 const RETRY_DELAYS_MS = [1000, 2000, 5000]
@@ -114,6 +115,27 @@ export const ScreenView = ({
 			{ type: 'module' },
 		)
 		workerRef.current = worker
+
+		// A hidden pane or tab has a 0×0 host; minimized windows set document.hidden.
+		let shown = true
+		const reportVisibility = (): void => {
+			const next =
+				!document.hidden &&
+				host.clientWidth > 0 &&
+				host.clientHeight > 0
+			if (next === shown) return
+			shown = next
+			const request: WorkerRequest = { type: 'visibility', visible: next }
+			worker.postMessage(request)
+		}
+		const visibilityObserver = new ResizeObserver(reportVisibility)
+		visibilityObserver.observe(host)
+		document.addEventListener('visibilitychange', reportVisibility)
+		reportVisibility()
+		cleanups.push(() => {
+			visibilityObserver.disconnect()
+			document.removeEventListener('visibilitychange', reportVisibility)
+		})
 
 		const send = (message: ControlMessage): void => {
 			controlRef.current?.send(message)
@@ -472,8 +494,6 @@ export const ScreenView = ({
 	const resetVideo = (): void => {
 		controlRef.current?.send({ t: 'resetVideo', force: true })
 	}
-	const buttonText = (icon: string, text: string): string =>
-		compact ? icon : `${icon} ${text}`
 	const revealPath = note?.revealPath ?? null
 	const captureButtons = (
 		<CaptureButtons
@@ -500,64 +520,76 @@ export const ScreenView = ({
 					}
 				>
 					{toolbarStart}
-					<button
-						onClick={() => press(KEY.BACK)}
-						title='Back (right-click)'
+					<span
+						className='tool-group'
+						role='group'
+						aria-label='Navigation'
 					>
-						{buttonText('◀', 'Back')}
-					</button>
-					<button
-						onClick={() => press(KEY.HOME)}
-						title='Home (middle-click)'
+						<IconButton
+							icon='back'
+							label='Back'
+							hint='Back (or right-click the screen)'
+							onClick={() => press(KEY.BACK)}
+						/>
+						<IconButton
+							icon='home'
+							label='Home'
+							hint='Home (or middle-click the screen)'
+							onClick={() => press(KEY.HOME)}
+						/>
+						<IconButton
+							icon='recents'
+							label='Recent apps'
+							onClick={() => press(KEY.APP_SWITCH)}
+						/>
+					</span>
+					<span
+						className='tool-group'
+						role='group'
+						aria-label='Hardware keys'
 					>
-						{buttonText('⌂', 'Home')}
-					</button>
-					<button
-						onClick={() => press(KEY.APP_SWITCH)}
-						title='Recents'
-					>
-						{buttonText('▢', 'Recents')}
-					</button>
-					<button
-						onClick={togglePower}
-						title='Screen on/off (never WAKEUP)'
-					>
-						{buttonText('⏻', 'Power')}
-					</button>
-					<button
-						onClick={() => press(KEY.VOLUME_DOWN)}
-						title='Volume down'
-					>
-						🔉
-					</button>
-					<button
-						onClick={() => press(KEY.VOLUME_UP)}
-						title='Volume up'
-					>
-						🔊
-					</button>
-					<button
-						onClick={resetVideo}
-						title='Ask for a fresh key frame'
-					>
-						{buttonText('⟳', 'Reset video')}
-					</button>
+						<IconButton
+							icon='power'
+							label='Power'
+							hint='Screen on/off'
+							onClick={togglePower}
+						/>
+						<IconButton
+							icon='volumeDown'
+							label='Volume down'
+							onClick={() => press(KEY.VOLUME_DOWN)}
+						/>
+						<IconButton
+							icon='volumeUp'
+							label='Volume up'
+							onClick={() => press(KEY.VOLUME_UP)}
+						/>
+					</span>
 					{captureButtons}
 					<span className='spacer' />
-					<span className='muted'>
+					<span
+						className='screen-stats'
+						title='Stream size · frames decoded behind real time'
+					>
 						{compact
 							? `lag ${lag}`
 							: `${size ? `${size.width}×${size.height}` : '…'} · lag ${lag}`}
-						{software && ' · sw'}
+						{software && ' · software decode'}
 					</span>
+					<IconButton
+						icon='refresh'
+						label='Reset video'
+						hint='Reset video: ask the device for a fresh key frame'
+						onClick={resetVideo}
+					/>
 				</div>
 			) : (
 				<div className='screen-label'>
 					<span>{label ?? 'Customer screen'}</span>
 					{captureButtons}
 					<span className='spacer' />
-					<span className='muted'>
-						{size ? `${size.width}×${size.height}` : ''} · view only
+					<span className='screen-stats'>
+						{size ? `${size.width}×${size.height} · ` : ''}view only
 					</span>
 				</div>
 			)}

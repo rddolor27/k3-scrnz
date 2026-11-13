@@ -1,4 +1,4 @@
-import { type JSX, lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { type JSX, lazy, Suspense, useRef, useState } from 'react'
 
 import { stateHint, stateTone } from '../lib/device-state'
 import { type DeviceView, isEmulator, stopEmulator } from '../lib/ipc'
@@ -6,6 +6,7 @@ import { warn } from '../lib/log'
 import { AppMenu } from './AppMenu'
 import { CustomerScreens, useCustomerDisplays } from './CustomerScreens'
 import { FileExplorer } from './FileExplorer'
+import { Icon } from './Icon'
 import { LogcatPanel } from './LogcatPanel'
 import { ScreenView } from './ScreenView'
 
@@ -19,7 +20,6 @@ type BottomPanel = 'logcat' | 'terminal'
 const LOG_HEIGHT_KEY = 'tri.logHeight'
 const CUSTOMER_KEY = 'tri.customerPanel'
 const MIN_LOG = 120
-const KEEP_SCREEN_MS = 15_000
 // The emulator encodes in software; a smaller stream keeps lag low.
 const EMULATOR_MAX_SIZE = 1280
 
@@ -46,24 +46,9 @@ interface DevicePaneProps {
 
 export const DevicePane = ({ device }: DevicePaneProps): JSX.Element => {
 	const [view, setView] = useState<View>('screen')
-	const [keepScreen, setKeepScreen] = useState(true)
 	const tone = stateTone(device)
 	const hint = stateHint(device)
 	const online = device.state === 'device' && !device.gone
-
-	useEffect(() => {
-		if (view === 'screen' || !keepScreen) return
-		const timer = window.setTimeout(
-			() => setKeepScreen(false),
-			KEEP_SCREEN_MS,
-		)
-		return (): void => window.clearTimeout(timer)
-	}, [view, keepScreen])
-
-	const show = (v: View): void => {
-		setView(v)
-		if (v === 'screen') setKeepScreen(true)
-	}
 
 	return (
 		<section className='pane pane-wide'>
@@ -83,7 +68,7 @@ export const DevicePane = ({ device }: DevicePaneProps): JSX.Element => {
 							key={v}
 							role='tab'
 							aria-selected={view === v}
-							onClick={() => show(v)}
+							onClick={() => setView(v)}
 						>
 							{v === 'screen'
 								? 'Screen'
@@ -95,7 +80,7 @@ export const DevicePane = ({ device }: DevicePaneProps): JSX.Element => {
 				</div>
 			</header>
 			{hint && <p className={`hint ${tone}`}>{hint}</p>}
-			{online && (view === 'screen' || keepScreen) && (
+			{online && (
 				<ScreenLayout
 					serial={device.serial}
 					deviceName={device.name}
@@ -136,7 +121,8 @@ const StopEmulator = ({ serial }: StopEmulatorProps): JSX.Element => {
 	return (
 		<span className='stop-emulator'>
 			<button onClick={stop} disabled={state === 'stopping'}>
-				{state === 'stopping' ? 'Stopping…' : '■ Stop emulator'}
+				<Icon name='stop' />
+				{state === 'stopping' ? 'Stopping…' : 'Stop emulator'}
 			</button>
 			{state !== 'idle' && state !== 'stopping' && (
 				<span className='err'>{state}</span>
@@ -227,8 +213,19 @@ const ScreenLayout = ({
 									? 'Hide the customer screen'
 									: 'Show the customer screen'
 							}
+							aria-label={
+								showCustomer
+									? 'Hide the customer screen'
+									: 'Show the customer screen'
+							}
 						>
-							{showCustomer ? '›' : '‹'}
+							<Icon
+								name={
+									showCustomer
+										? 'chevronRight'
+										: 'chevronLeft'
+								}
+							/>
 						</button>
 						{showCustomer && (
 							<CustomerScreens

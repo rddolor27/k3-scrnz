@@ -1,6 +1,7 @@
 import { type JSX, useEffect, useState } from 'react'
 
 import { formatElapsed } from '../lib/capture'
+import { Icon } from './Icon'
 
 interface CaptureButtonsProps {
 	compact: boolean
@@ -21,21 +22,28 @@ export const CaptureButtons = ({
 	onScreenshot,
 	onToggleRecording,
 }: CaptureButtonsProps): JSX.Element => (
-	<>
+	<span className='tool-group'>
 		<button
+			className='icon-button'
 			onClick={onScreenshot}
 			disabled={!canCapture || shooting}
 			title='Screenshot: saved to Downloads and copied'
+			aria-label='Screenshot'
 		>
-			📷
+			<Icon name='camera' />
 		</button>
 		{recordingSince === null ? (
 			<button
+				className={
+					compact ? 'icon-button record-button' : 'record-button'
+				}
 				onClick={onToggleRecording}
 				disabled={!canCapture || recordingBusy}
 				title='Record the screen to an MP4'
+				aria-label='Record'
 			>
-				{compact ? '⏺' : '⏺ Record'}
+				<Icon name='record' />
+				{!compact && 'Record'}
 			</button>
 		) : (
 			<button
@@ -44,10 +52,11 @@ export const CaptureButtons = ({
 				disabled={recordingBusy}
 				title='Stop recording'
 			>
-				⏹ <RecordingTimer since={recordingSince} />
+				<Icon name='stop' />
+				<RecordingTimer since={recordingSince} />
 			</button>
 		)}
-	</>
+	</span>
 )
 
 interface RecordingTimerProps {
