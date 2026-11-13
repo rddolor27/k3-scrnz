@@ -8,7 +8,7 @@ use thiserror::Error;
 use crate::adb::{self, AdbError, AdbServer, DeviceSel, MODE_FILE_0644, ShellOutput, shell_quote};
 use crate::files::{self, FilesError};
 
-const INSTALL_HEADER: &str = "x-k3-install";
+const INSTALL_HEADER: &str = "x-tri-install";
 const MAX_APK: u64 = 512 * 1024 * 1024;
 const PUSH_TIMEOUT: Duration = Duration::from_secs(300);
 const INSTALL_TIMEOUT: Duration = Duration::from_secs(300);
@@ -125,7 +125,7 @@ async fn install(serial: &str, name: &str, apk: &[u8]) -> Result<String, AppsErr
     let server = AdbServer::default();
     let sel = DeviceSel::Serial(serial.to_owned());
     let remote = format!(
-        "/data/local/tmp/k3-scrnz-install-{:016x}.apk",
+        "/data/local/tmp/tri-scrnz-install-{:016x}.apk",
         rand::random::<u64>()
     );
     let result = stage_and_install(&server, &sel, apk, &remote).await;

@@ -22,7 +22,7 @@ use crate::files::{self, FilesError};
 use crate::mirror::MirrorHub;
 use crate::scrcpy::video::{K_CONFIG, K_FRAME};
 
-const CAPTURE_HEADER: &str = "x-k3-capture";
+const CAPTURE_HEADER: &str = "x-tri-capture";
 const MAX_DIMENSION: u32 = 8192;
 const RECORD_QUEUE: usize = 600;
 const GRID_MIN: u16 = 16;

@@ -46,12 +46,12 @@ const StatsText = ({ stats }: StatsTextProps): JSX.Element => {
 				className={
 					stats.memoryBytes > RAM_TARGET_BYTES ? 'warn' : undefined
 				}
-				title={`k3.scrnz and ${stats.processes - 1} WebView2 processes; RAM is the summed working set`}
+				title={`tri.scrnz and ${stats.processes - 1} WebView2 processes; RAM is the summed working set`}
 			>
 				CPU {stats.cpuPercent.toFixed(1)}% · RAM {mb} MB
 			</span>
 			{stats.emulatorMemoryBytes > 0 && (
-				<span title='Emulators started from k3.scrnz'>
+				<span title='Emulators started from tri.scrnz'>
 					Emulator CPU {stats.emulatorCpuPercent.toFixed(1)}% · RAM{' '}
 					{emulatorGb.toFixed(1)} GB
 				</span>

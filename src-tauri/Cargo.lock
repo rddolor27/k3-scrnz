@@ -1885,28 +1885,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "k3-scrnz"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "futures-util",
- "rand",
- "regex",
- "serde",
- "serde_json",
- "sysinfo",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-log",
- "thiserror 2.0.21",
- "tokio",
- "tokio-tungstenite",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
 name = "keyboard-types"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4198,6 +4176,28 @@ dependencies = [
  "memchr",
  "nom",
  "petgraph",
+]
+
+[[package]]
+name = "tri-scrnz"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures-util",
+ "rand",
+ "regex",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-log",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]

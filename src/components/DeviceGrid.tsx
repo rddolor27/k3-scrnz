@@ -15,7 +15,7 @@ const GAP = 12
 const MIN_W = 280
 const MIN_H = 200
 const TILE_CHROME_H = 44
-const SIZES_KEY = 'k3.gridSizes'
+const SIZES_KEY = 'tri.gridSizes'
 
 interface Size {
 	w: number

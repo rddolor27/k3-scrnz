@@ -34,7 +34,7 @@ fn log_plugin<R: tauri::Runtime>() -> TauriPlugin<R> {
         .targets([
             Target::new(TargetKind::Stdout),
             Target::new(TargetKind::LogDir {
-                file_name: Some("k3-scrnz".into()),
+                file_name: Some("tri-scrnz".into()),
             }),
         ])
         .level(level)

@@ -52,7 +52,7 @@ export const DEFAULT_LOG_FILTER: LogFilter = {
 	onlyApp: false,
 }
 
-export const FOCUS_LOG_FILTER_EVENT = 'k3-focus-log-filter'
+export const FOCUS_LOG_FILTER_EVENT = 'tri-focus-log-filter'
 
 const LEVEL_BY_VALUE = new Map<number, LogLevel>(
 	LOG_LEVELS.map((level): [number, LogLevel] => [level.value, level]),

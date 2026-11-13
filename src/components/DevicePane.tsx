@@ -11,8 +11,8 @@ import { ScreenView } from './ScreenView'
 
 type View = 'screen' | 'files' | 'info'
 
-const LOG_HEIGHT_KEY = 'k3.logHeight'
-const CUSTOMER_KEY = 'k3.customerPanel'
+const LOG_HEIGHT_KEY = 'tri.logHeight'
+const CUSTOMER_KEY = 'tri.customerPanel'
 const MIN_LOG = 120
 const KEEP_SCREEN_MS = 15_000
 // The emulator encodes in software; a smaller stream keeps lag low.

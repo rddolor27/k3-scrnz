@@ -10,7 +10,7 @@ use tokio::io::AsyncWriteExt;
 
 use crate::adb::{self, AdbError, AdbServer, DeviceSel, MODE_FILE_0644, ShellEvent, shell_quote};
 
-const UPLOAD_HEADER: &str = "x-k3-upload";
+const UPLOAD_HEADER: &str = "x-tri-upload";
 const MAX_UPLOAD: u64 = 256 * 1024 * 1024;
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
@@ -284,7 +284,7 @@ pub(crate) fn downloads_root(app: &AppHandle) -> Result<PathBuf, FilesError> {
         .path()
         .download_dir()
         .map_err(|e| FilesError::App(format!("no Downloads folder: {e}")))?;
-    Ok(dir.join("k3-scrnz"))
+    Ok(dir.join("tri-scrnz"))
 }
 
 pub(crate) async fn reserve_unique(dir: &Path, name: &str) -> Result<PathBuf, FilesError> {
@@ -329,7 +329,7 @@ pub async fn list_dir(
     } else {
         format!("{path}/")
     };
-    let marker = format!("@k3:{:016x}@", rand::random::<u64>());
+    let marker = format!("@tri:{:016x}@", rand::random::<u64>());
     let cmd = format!(
         "find {} -mindepth 1 -maxdepth 1 -exec stat -c {} {{}} +",
         shell_quote(&dir_arg),
@@ -451,7 +451,7 @@ async fn upload(
                 )));
             }
             let staging = format!(
-                "/data/local/tmp/k3-scrnz-upload-{:016x}",
+                "/data/local/tmp/tri-scrnz-upload-{:016x}",
                 rand::random::<u64>()
             );
             let copied =
@@ -528,7 +528,7 @@ struct UploadMeta {
     run_as: Option<String>,
 }
 
-/// `x-k3-upload` is hex-encoded JSON: headers must be ASCII and names may not be.
+/// `x-tri-upload` is hex-encoded JSON: headers must be ASCII and names may not be.
 #[tauri::command]
 pub async fn upload_bytes(request: Request<'_>) -> Result<String, FilesError> {
     let meta = request

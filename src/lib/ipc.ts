@@ -142,7 +142,7 @@ export const uploadBytes = (
 ): Promise<string> =>
 	invoke<string>('upload_bytes', bytes, {
 		headers: {
-			'x-k3-upload': toHex(
+			'x-tri-upload': toHex(
 				JSON.stringify({
 					serial,
 					dir: dir.path,
@@ -178,7 +178,7 @@ export const installApkBytes = (
 	bytes: Uint8Array,
 ): Promise<string> =>
 	invoke<string>('install_apk_bytes', bytes, {
-		headers: { 'x-k3-install': toHex(JSON.stringify({ serial, name })) },
+		headers: { 'x-tri-install': toHex(JSON.stringify({ serial, name })) },
 	})
 
 export const appAction = (
@@ -257,7 +257,7 @@ export const saveScreenshot = (
 	body: Uint8Array,
 ): Promise<ScreenshotSaved> =>
 	invoke<ScreenshotSaved>('save_screenshot', body, {
-		headers: { 'x-k3-capture': toHex(JSON.stringify(capture)) },
+		headers: { 'x-tri-capture': toHex(JSON.stringify(capture)) },
 	})
 
 export type RecordingEndReason =

@@ -87,7 +87,7 @@ export const EmulatorMenu = ({ onOpen }: EmulatorMenuProps): JSX.Element => {
 			<button
 				onClick={() => setOpen((shown) => !shown)}
 				aria-expanded={open}
-				title='Boot an Android emulator inside k3.scrnz'
+				title='Boot an Android emulator inside tri.scrnz'
 			>
 				＋ Emulator
 			</button>
@@ -147,7 +147,7 @@ export const EmulatorMenu = ({ onOpen }: EmulatorMenuProps): JSX.Element => {
 					{message && <span className='muted'>{message}</span>}
 					<span className='muted'>
 						Boots without a window (host GPU, quick boot) and shows
-						up as a tab like a device. Closing k3.scrnz stops the
+						up as a tab like a device. Closing tri.scrnz stops the
 						emulators it started.
 					</span>
 				</div>

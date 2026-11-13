@@ -40,7 +40,7 @@ pub struct ConfigStore {
 impl ConfigStore {
     pub fn load() -> Self {
         let path = std::env::var_os("APPDATA")
-            .map(|dir| PathBuf::from(dir).join("k3-scrnz").join("config.json"));
+            .map(|dir| PathBuf::from(dir).join("tri-scrnz").join("config.json"));
         let config = path.as_deref().map(read_or_default).unwrap_or_default();
         Self {
             path,

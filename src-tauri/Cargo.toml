@@ -1,12 +1,12 @@
 [package]
-name = "k3-scrnz"
+name = "tri-scrnz"
 version = "0.1.0"
 description = "Lightweight multi-device Android screen mirror + logcat viewer"
 authors = ["rddolor27"]
 edition = "2024"
 
 [lib]
-name = "k3_scrnz_lib"
+name = "tri_scrnz_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

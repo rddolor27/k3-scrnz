@@ -1,4 +1,9 @@
-# k3.scrnz
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/lockup-on-dark.svg">
+  <img alt="tri.scrnz" src="assets/brand/lockup-on-light.svg" width="360">
+</picture>
+
+# tri.scrnz
 
 A lightweight Windows desktop app for testing Android devices over USB. It gives you one tab per device, with a clickable live mirror of the main screen, the customer screen when one is detected, and a filtered logcat panel.
 
