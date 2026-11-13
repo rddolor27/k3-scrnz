@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 16 515 100">
+	<defs>
+		<linearGradient id="tri-bg" x1="0" y1="0" x2="1" y2="1">
+			<stop offset="0" stop-color="#252a32" />
+			<stop offset="1" stop-color="#111317" />
+		</linearGradient>
+	</defs>
+	<g transform="translate(0 18) scale(0.1875)">
+		<rect width="512" height="512" rx="112" fill="url(#tri-bg)" />
+		<rect x="96" y="96" width="320" height="136" rx="24" fill="#3ddc84" />
+		<rect x="112" y="112" width="84.9" height="38.9" rx="7" fill="#15181d" />
+		<rect x="207.9" y="112" width="42.6" height="38.9" rx="7" fill="#15181d" />
+		<rect x="112" y="161.9" width="138.5" height="54.1" rx="7" fill="#15181d" />
+		<rect x="261.5" y="112" width="138.5" height="104" rx="7" fill="#15181d" />
+		<rect x="96" y="256" width="148" height="160" rx="24" fill="#22d3ee" />
+		<rect x="112" y="272" width="20.75" height="23.75" rx="7" fill="#15181d" />
+		<rect x="143.75" y="272" width="20.75" height="23.75" rx="7" fill="#15181d" />
+		<rect x="112" y="306.75" width="20.75" height="23.75" rx="7" fill="#15181d" />
+		<rect x="143.75" y="306.75" width="20.75" height="23.75" rx="7" fill="#15181d" />
+		<rect x="175.5" y="272" width="52.5" height="58.5" rx="7" fill="#15181d" />
+		<rect x="112" y="341.5" width="52.5" height="23.75" rx="7" fill="#15181d" />
+		<rect x="112" y="376.25" width="52.5" height="23.75" rx="7" fill="#15181d" />
+		<rect x="175.5" y="341.5" width="52.5" height="58.5" rx="7" fill="#15181d" />
+		<rect x="268" y="256" width="148" height="160" rx="24" fill="#4c8dff" />
+		<rect x="284" y="272" width="52.5" height="58.5" rx="7" fill="#15181d" />
+		<rect x="347.5" y="272" width="52.5" height="128" rx="7" fill="#15181d" />
+		<rect x="284" y="341.5" width="52.5" height="58.5" rx="7" fill="#15181d" />
+	</g>
+	<g transform="translate(124 0)">
+		<g fill="none" stroke="#111317" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
+			<path d="M6 52H30M16 34V84A16 16 0 0 0 32 100" />
+			<path d="M52 100V52M52 74A22 22 0 0 1 74 52" />
+			<path d="M95 100V52" />
+			<path d="M158.4 58A12 12 0 1 0 148 76A12 12 0 1 1 137.6 94" />
+			<path d="M222 59A24 24 0 1 0 222 93" />
+			<path d="M243 100V52M243 74A22 22 0 0 1 265 52" />
+			<path d="M286 100V52M286 76A20 24 0 0 1 326 76V100" />
+			<path d="M347 52H381L347 100H381" />
+		</g>
+		<circle cx="95" cy="33" r="6.5" fill="#111317" />
+		<rect x="107.5" y="90.5" width="15" height="15" rx="4" fill="#2d63d8" />
+	</g>
+</svg>
