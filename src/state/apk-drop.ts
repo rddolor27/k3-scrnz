@@ -31,18 +31,16 @@ export const useApkDrop = ({
 		let unlisten: (() => void) | null = null
 		let hasApk = false
 
-		// A hidden screen has an empty rect, so it never matches.
+		// Grid tiles can overlap: only the screen on top takes the drop, never
+		// one that is covered, hidden or scrolled out of view.
 		const isOver = (position: { x: number; y: number }): boolean => {
-			const rect = hostRef.current?.getBoundingClientRect()
-			if (!rect || rect.width === 0 || rect.height === 0) return false
-			const x = position.x / window.devicePixelRatio
-			const y = position.y / window.devicePixelRatio
-			return (
-				x >= rect.left &&
-				x < rect.right &&
-				y >= rect.top &&
-				y < rect.bottom
+			const host = hostRef.current
+			if (!host) return false
+			const top = document.elementFromPoint(
+				position.x / window.devicePixelRatio,
+				position.y / window.devicePixelRatio,
 			)
+			return top !== null && host.contains(top)
 		}
 
 		const install = async (paths: string[]): Promise<void> => {
