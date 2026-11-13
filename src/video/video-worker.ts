@@ -13,6 +13,9 @@ const MAX_ERRORS = 5
 // An SPS without VUI `bitstream_restriction` makes Chromium's hardware decoder
 // reorder across the whole DPB (lag); sustained lag above this goes software.
 const MAX_LAG = 2
+// That decoder holds up to 16 frames of a small stream, and a still screen
+// sends only its frame plus ten repeats, 100 ms apart.
+const FIRST_FRAME_MS = 1500
 const TAP_EVERY_MS = 33
 
 let canvas: OffscreenCanvas | null = null
@@ -38,6 +41,7 @@ let tapSentAt = 0
 let tapPending = false
 let visible = true
 let keyRetry = 0
+let firstFrameTimer = 0
 
 const post = (event: WorkerEvent, transfer: Transferable[] = []): void => {
 	self.postMessage(event, { transfer })
@@ -146,8 +150,10 @@ const onFrame = (frame: VideoFrame): void => {
 		if (highLag >= 2) {
 			highLag = 0
 			// Not from inside the decoder's own output callback.
-			if (!preferSoftware) setTimeout(() => switchToSoftware(lag), 0)
-			else if (!lagReported) {
+			if (!preferSoftware) {
+				const reason = `lag stayed at ${lag}`
+				setTimeout(() => switchToSoftware(reason), 0)
+			} else if (!lagReported) {
 				lagReported = true
 				post({
 					type: 'notice',
@@ -158,7 +164,7 @@ const onFrame = (frame: VideoFrame): void => {
 	}
 }
 
-const switchToSoftware = (lag: number): void => {
+const switchToSoftware = (reason: string): void => {
 	if (preferSoftware || failed) return
 	preferSoftware = true
 	const old = decoder
@@ -166,9 +172,21 @@ const switchToSoftware = (lag: number): void => {
 	if (old && old.state !== 'closed') old.close()
 	post({
 		type: 'notice',
-		message: `lag stayed at ${lag}; switching to software decoding`,
+		message: `${reason}; switching to software decoding`,
 	})
+	post({ type: 'stats', lag: 0, queue: 0, software: true })
 	requestKey()
+}
+
+const watchFirstFrame = (): void => {
+	if (firstFrameTimer || framesOut > 0 || preferSoftware) return
+	firstFrameTimer = self.setTimeout(() => {
+		firstFrameTimer = 0
+		if (framesOut > 0 || chunksIn === 0) return
+		switchToSoftware(
+			`no frame out of ${chunksIn} decoded in ${FIRST_FRAME_MS} ms`,
+		)
+	}, FIRST_FRAME_MS)
 }
 
 const onDecoderError = (which: VideoDecoder, message: string): void => {
@@ -214,6 +232,8 @@ const configure = (): void => {
 		return
 	}
 	// Chunks in flight at reset() never come out; restart the lag count.
+	self.clearTimeout(firstFrameTimer)
+	firstFrameTimer = 0
 	chunksIn = 0
 	framesOut = 0
 	highLag = 0
@@ -260,6 +280,7 @@ const decode = (data: Uint8Array, key: boolean): void => {
 	}
 	if (key) needKey = false
 	chunksIn += 1
+	watchFirstFrame()
 }
 
 const onEnvelope = (buf: ArrayBuffer): void => {
@@ -337,6 +358,7 @@ self.onmessage = (e: MessageEvent<WorkerRequest>): void => {
 		if (visible && needKey && config) requestKey()
 		return
 	}
+	preferSoftware = request.software
 	canvas = request.canvas
 	ctx = canvas.getContext('2d', { alpha: false, desynchronized: true })
 	const ws = connect(

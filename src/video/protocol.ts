@@ -4,6 +4,7 @@ export interface WorkerInit {
 	port: number
 	token: string
 	sessionId: string
+	software: boolean
 }
 
 export interface WorkerScreenshotRequest {

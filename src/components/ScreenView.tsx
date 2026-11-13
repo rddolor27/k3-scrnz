@@ -32,6 +32,8 @@ const IDLE_AFTER_MS = 3000
 const RETRY_DELAYS_MS = [1000, 2000, 5000]
 // Every running server costs the device an encoder and ~80 MB of RAM.
 const SUSPEND_AFTER_MS = 30_000
+// Streams whose hardware decoder held frames back start in software next time.
+const softwareStreams = new Set<string>()
 
 type Phase =
 	| { kind: 'starting' }
@@ -143,6 +145,7 @@ export const ScreenView = ({
 		let failed = false
 		let retryTimer = 0
 		const video = { width: 0, height: 0 }
+		const streamKey = `${serial}/${displayId}/${maxSize ?? 0}`
 
 		// A fresh canvas per mount: transferControlToOffscreen works only once.
 		const canvas = document.createElement('canvas')
@@ -246,6 +249,7 @@ export const ScreenView = ({
 			} else if (event.type === 'stats') {
 				setLag(event.lag)
 				setSoftware(event.software)
+				if (event.software) softwareStreams.add(streamKey)
 			} else if (event.type === 'notice') {
 				void info(`video ${serial}/${displayId}: ${event.message}`)
 			} else if (event.type === 'frame') {
@@ -320,6 +324,7 @@ export const ScreenView = ({
 					port: ep.port,
 					token: ep.token,
 					sessionId,
+					software: softwareStreams.has(streamKey),
 				}
 				worker.postMessage(init, [offscreen])
 				setTapWorker(worker)
