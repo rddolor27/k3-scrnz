@@ -7,9 +7,12 @@ import {
 } from 'react'
 
 import type { DeviceView } from '../lib/ipc'
+import { useHiddenDevices } from '../state/hidden-devices'
 import { CustomerScreens, useCustomerDisplaysOf } from './CustomerScreens'
 import { GridTools } from './GridTools'
+import { HiddenDevicesMenu } from './HiddenDevicesMenu'
 import { Icon } from './Icon'
+import { IconButton } from './IconButton'
 import { ScreenView } from './ScreenView'
 
 const GRID_MAX_SIZE = 1280
@@ -254,14 +257,17 @@ export const DeviceGrid = ({
 		return (): void => observer.disconnect()
 	}, [])
 
+	const { hidden, hide, show, showAll } = useHiddenDevices()
+	const shown = devices.filter((d) => !hidden.has(d.serial))
+	const hiddenDevices = devices.filter((d) => hidden.has(d.serial))
 	const customers = useCustomerDisplaysOf(
-		devices.map((d) => d.serial),
+		shown.map((d) => d.serial),
 		DISPLAYS_EVERY_MS,
 	)
 	const isWide = (serial: string): boolean =>
 		(customers[serial] ?? []).length > 0
 	const auto = autoRects(
-		devices.map((d) => isWide(d.serial)),
+		shown.map((d) => isWide(d.serial)),
 		box,
 	)
 
@@ -366,16 +372,23 @@ export const DeviceGrid = ({
 			</section>
 		)
 	}
-	const arranged = devices.some(
+	const arranged = shown.some(
 		({ serial }) =>
 			rects[serial] !== undefined || splits[serial] !== undefined,
 	)
 	return (
 		<div className='grid-view'>
 			<GridTools
-				serials={devices.map((device) => device.serial)}
+				serials={shown.map((device) => device.serial)}
 				slot={toolsSlot}
 			>
+				{hiddenDevices.length > 0 && (
+					<HiddenDevicesMenu
+						devices={hiddenDevices}
+						onShow={show}
+						onShowAll={showAll}
+					/>
+				)}
 				{arranged && (
 					<button
 						onClick={resetLayout}
@@ -386,7 +399,18 @@ export const DeviceGrid = ({
 				)}
 			</GridTools>
 			<div className='device-grid' ref={gridRef}>
-				{devices.map((device, index) => {
+				{shown.length === 0 && (
+					<section className='empty'>
+						<h1>All devices are hidden</h1>
+						<p className='muted'>
+							Hidden devices still have their own tabs.
+						</p>
+						<button className='grid-show-all' onClick={showAll}>
+							Show all {hiddenDevices.length} devices
+						</button>
+					</section>
+				)}
+				{shown.map((device, index) => {
 					const wide = isWide(device.serial)
 					const id = device.serial
 					const rect = rects[id] ?? auto[index]
@@ -439,6 +463,12 @@ export const DeviceGrid = ({
 										>
 											{device.name}
 										</button>
+										<IconButton
+											icon='eyeOff'
+											label={`Hide ${device.name}`}
+											hint='Hide from All devices (its tab stays)'
+											onClick={() => hide(device.serial)}
+										/>
 									</>
 								}
 							/>

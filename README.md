@@ -13,7 +13,7 @@ Built with Tauri 2 (Rust and React/TypeScript). It talks to the adb server that 
 
 - **Device tabs.** One tab per connected device or emulator, with a live mirror you can click, type and scroll in, plus Back, Home, Recents, power, volume and rotate buttons.
 - **Customer screen.** A second (presentation) display is detected and mirrored next to the main screen, view-only.
-- **All devices.** Every device as a tile on one board. Drag a tile by its header, resize it from any side, drag the divider between its two screens, and record the whole board as one MP4.
+- **All devices.** Every device as a tile on one board. Drag a tile by its header, resize it from any side, drag the divider between its two screens, hide the devices you don't need there, and record the whole board as one MP4.
 - **Logcat.** Live, filtered by level, tag, text or regex, and by the app you pick.
 - **Capture.** Screenshots (saved and copied to the clipboard) and MP4 recordings of any screen.
 - **Files.** A tree of the device's files with upload, download, new folder and delete, including app data of debuggable apps.

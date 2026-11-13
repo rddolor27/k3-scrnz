@@ -563,6 +563,59 @@ input {
 	gap: 8px;
 }
 
+.hidden-menu {
+	position: relative;
+	display: flex;
+	align-items: center;
+}
+
+.hidden-menu > button {
+	padding: 4px 10px;
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	background: var(--panel-raised);
+}
+
+.hidden-menu > button:hover {
+	border-color: var(--accent);
+}
+
+.hidden-popover {
+	width: 300px;
+}
+
+.hidden-footer {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding-top: 6px;
+	border-top: 1px solid var(--border);
+}
+
+.hidden-footer button {
+	flex: none;
+	padding: 2px 10px;
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	background: var(--panel);
+}
+
+.hidden-footer button:hover {
+	border-color: var(--accent);
+}
+
+.grid-show-all {
+	margin-top: 8px;
+	padding: 4px 12px;
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	background: var(--panel-raised);
+}
+
+.grid-show-all:hover {
+	border-color: var(--accent);
+}
+
 .emulator-row .name {
 	flex: 1;
 	overflow: hidden;

@@ -137,6 +137,14 @@ const GLYPHS = {
 	),
 	play: <path d='M5 3.5v9l7-4.5z' />,
 	grip: <path d='M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01' />,
+	eyeOff: (
+		<>
+			<path d='M6.3 4.1A6.6 6.6 0 0 1 8 3.9c3.6 0 6 4.1 6 4.1a10.6 10.6 0 0 1-1.6 2.1' />
+			<path d='M10.6 11.4A6 6 0 0 1 8 12.1C4.4 12.1 2 8 2 8a10.8 10.8 0 0 1 2.6-2.9' />
+			<path d='M6.6 6.6a2 2 0 0 0 2.8 2.8' />
+			<path d='M2.5 2.5l11 11' />
+		</>
+	),
 } satisfies Record<string, JSX.Element>
 
 export type IconName = keyof typeof GLYPHS
