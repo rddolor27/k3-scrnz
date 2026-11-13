@@ -43,7 +43,9 @@
 			"icons/icon.ico"
 		],
 		"resources": {
-			"resources/scrcpy-server-v5.0.1": "scrcpy-server-v5.0.1"
+			"resources/scrcpy-server-v5.0.1": "scrcpy-server-v5.0.1",
+			"../LICENSE": "LICENSE",
+			"../NOTICE": "NOTICE"
 		}
 	}
 }

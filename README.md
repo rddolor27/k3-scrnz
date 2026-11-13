@@ -32,6 +32,10 @@ pnpm tauri build
 
 The NSIS installer is written to `src-tauri/target/release/bundle/nsis/`.
 
+## License
+
+tri.scrnz is licensed under the [Apache License 2.0](LICENSE). The installer ships `LICENSE` and `NOTICE` next to the app.
+
 ## Third-party
 
-`src-tauri/resources/scrcpy-server-v5.0.1` is the unmodified server from [scrcpy](https://github.com/Genymobile/scrcpy) v5.0.1 (Genymobile, Apache License 2.0). Its SHA-256 is `764eb6f79811d5211fe9df341120882ba9994c7a61b897d7bf3fb662e53bc536`.
+`src-tauri/resources/scrcpy-server-v5.0.1` is the unmodified server from [scrcpy](https://github.com/Genymobile/scrcpy) v5.0.1 (Copyright (C) 2018 Genymobile, Copyright (C) 2018-2026 Romain Vimont; Apache License 2.0). Its SHA-256 is `764eb6f79811d5211fe9df341120882ba9994c7a61b897d7bf3fb662e53bc536`. See [NOTICE](NOTICE).
