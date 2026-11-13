@@ -1,0 +1,140 @@
+.terminal-panel {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+	background: var(--panel);
+	font-size: 13px;
+}
+
+.terminal-bar,
+.terminal-actions {
+	display: flex;
+	flex: none;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 8px;
+	border-bottom: 1px solid var(--border);
+}
+
+.terminal-bar {
+	background: var(--panel-raised);
+}
+
+.terminal-bar > button,
+.terminal-actions button {
+	padding: 2px 10px;
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	background: var(--panel);
+}
+
+.terminal-bar > button:hover:not(:disabled),
+.terminal-actions button:hover {
+	border-color: var(--accent);
+}
+
+.terminal-bar > button:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
+.terminal-link {
+	margin-right: 4px;
+	white-space: nowrap;
+}
+
+.terminal-tabs {
+	display: flex;
+	flex: 1;
+	flex-wrap: wrap;
+	gap: 4px;
+	min-width: 0;
+}
+
+.terminal-tab {
+	display: flex;
+	align-items: center;
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	background: var(--panel);
+}
+
+.terminal-tab.active {
+	border-color: var(--accent);
+}
+
+.terminal-tab button {
+	padding: 2px 8px;
+	border: 0;
+	background: none;
+}
+
+.terminal-tab.active button[role='tab'] {
+	color: var(--accent);
+}
+
+.terminal-tab-close {
+	color: var(--muted);
+}
+
+.terminal-tab-close:hover {
+	color: var(--bad);
+}
+
+.terminal-badge {
+	padding: 1px 8px;
+	border-radius: 10px;
+	background: var(--panel-raised);
+	color: var(--accent);
+}
+
+.terminal-cwd {
+	overflow: hidden;
+	max-width: 420px;
+	color: var(--muted);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.terminal-clear {
+	margin-left: auto;
+}
+
+.terminal-error {
+	flex: none;
+	margin: 0;
+	padding: 4px 8px;
+}
+
+.terminal-body {
+	position: relative;
+	flex: 1;
+	min-height: 0;
+	background: var(--bg);
+}
+
+.terminal-view {
+	position: absolute;
+	inset: 0;
+	padding: 4px 0 0 8px;
+}
+
+.terminal-view[hidden] {
+	display: none;
+}
+
+.terminal-empty {
+	display: grid;
+	place-content: center;
+	gap: 4px;
+	height: 100%;
+	padding: 16px;
+	text-align: center;
+}
+
+.terminal-empty p {
+	max-width: 60ch;
+	margin: 0;
+}

@@ -16,6 +16,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 bytes = "1"
 futures-util = { version = "0.3", features = ["sink"] }
+portable-pty = "0.9.0"
 rand = "0.10.3"
 regex = "1.13.1"
 serde = { version = "1.0.229", features = ["derive"] }
@@ -24,6 +25,7 @@ sysinfo = { version = "0.40.3", default-features = false, features = ["system"] 
 # Same minor as @tauri-apps/api and @tauri-apps/cli.
 tauri = { version = "~2.12", features = [] }
 tauri-plugin-clipboard-manager = "2"
+tauri-plugin-dialog = "2"
 tauri-plugin-log = "2"
 thiserror = "2.0.21"
 tokio = { version = "1.54", features = ["fs", "net", "io-util", "process", "sync", "time", "macros", "rt-multi-thread"] }

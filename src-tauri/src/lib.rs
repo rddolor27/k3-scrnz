@@ -10,6 +10,7 @@ mod logcat;
 mod mirror;
 mod scrcpy;
 mod stats;
+mod terminal;
 mod ws;
 
 use std::sync::Arc;
@@ -51,6 +52,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(log_plugin())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let endpoint = ws::start(app.handle().clone())?;
             tracing::info!(port = endpoint.port, "WebSocket server listening");
@@ -81,6 +83,7 @@ pub fn run() {
                 Arc::clone(&hub),
             ));
             app.manage(capture::GridRecordings::default());
+            app.manage(terminal::TerminalHub::default());
             app.manage(stats::StatsState::new());
             app.manage(emulator::EmulatorState::new(app.path().app_log_dir().ok()));
             app.manage(Arc::clone(&config));
@@ -119,6 +122,8 @@ pub fn run() {
             logcat::get_logcat_info,
             logcat::set_app_package,
             stats::get_app_stats,
+            terminal::start_terminal,
+            terminal::stop_terminal,
             emulator::list_avds,
             emulator::start_emulator,
             emulator::stop_emulator,
@@ -128,6 +133,9 @@ pub fn run() {
         .run(|app, event| {
             if !matches!(event, tauri::RunEvent::Exit) {
                 return;
+            }
+            if let Some(terminals) = app.try_state::<terminal::TerminalHub>() {
+                terminals.stop_all();
             }
             let mut pending = Vec::new();
             if let Some(hub) = app.try_state::<Arc<mirror::MirrorHub>>() {

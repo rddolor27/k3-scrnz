@@ -1,4 +1,4 @@
-import { type JSX, useEffect, useRef, useState } from 'react'
+import { type JSX, lazy, Suspense, useEffect, useRef, useState } from 'react'
 
 import { stateHint, stateTone } from '../lib/device-state'
 import { type DeviceView, isEmulator, stopEmulator } from '../lib/ipc'
@@ -9,7 +9,12 @@ import { FileExplorer } from './FileExplorer'
 import { LogcatPanel } from './LogcatPanel'
 import { ScreenView } from './ScreenView'
 
+const TerminalPanel = lazy(() =>
+	import('./TerminalPanel').then((m) => ({ default: m.TerminalPanel })),
+)
+
 type View = 'screen' | 'files' | 'info'
+type BottomPanel = 'logcat' | 'terminal'
 
 const LOG_HEIGHT_KEY = 'tri.logHeight'
 const CUSTOMER_KEY = 'tri.customerPanel'
@@ -93,6 +98,7 @@ export const DevicePane = ({ device }: DevicePaneProps): JSX.Element => {
 			{online && (view === 'screen' || keepScreen) && (
 				<ScreenLayout
 					serial={device.serial}
+					deviceName={device.name}
 					hidden={view !== 'screen'}
 				/>
 			)}
@@ -141,11 +147,17 @@ const StopEmulator = ({ serial }: StopEmulatorProps): JSX.Element => {
 
 interface ScreenLayoutProps {
 	serial: string
+	deviceName: string
 	hidden: boolean
 }
 
-const ScreenLayout = ({ serial, hidden }: ScreenLayoutProps): JSX.Element => {
+const ScreenLayout = ({
+	serial,
+	deviceName,
+	hidden,
+}: ScreenLayoutProps): JSX.Element => {
 	const customers = useCustomerDisplays(serial)
+	const [bottom, setBottom] = useState<BottomPanel>('logcat')
 	const [logHeight, setLogHeight] = useState(() =>
 		readNumber(LOG_HEIGHT_KEY, 260),
 	)
@@ -234,7 +246,35 @@ const ScreenLayout = ({ serial, hidden }: ScreenLayoutProps): JSX.Element => {
 				onPointerDown={startDrag}
 			/>
 			<div className='log-region'>
-				<LogcatPanel serial={serial} />
+				<div className='bottom-tabs' role='tablist'>
+					{(['logcat', 'terminal'] as const).map((panel) => (
+						<button
+							key={panel}
+							role='tab'
+							aria-selected={bottom === panel}
+							onClick={() => setBottom(panel)}
+						>
+							{panel === 'logcat' ? 'Logcat' : 'Terminal'}
+						</button>
+					))}
+				</div>
+				<div className='bottom-body' hidden={bottom !== 'logcat'}>
+					<LogcatPanel serial={serial} />
+				</div>
+				{bottom === 'terminal' && (
+					<div className='bottom-body'>
+						<Suspense
+							fallback={
+								<p className='muted'>Loading the terminal…</p>
+							}
+						>
+							<TerminalPanel
+								serial={serial}
+								deviceName={deviceName}
+							/>
+						</Suspense>
+					</div>
+				)}
 			</div>
 		</div>
 	)

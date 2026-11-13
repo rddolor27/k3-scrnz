@@ -14,6 +14,7 @@ use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use crate::capture::{CaptureError, EndReason, GridRecordings, Msg};
 use crate::mirror::{MirrorHub, Session};
 use crate::scrcpy::control::Input;
+use crate::terminal::{self, Output, TerminalHub};
 
 const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -34,6 +35,13 @@ struct Hello {
 #[derive(Deserialize)]
 struct RecordControl {
     t: String,
+}
+
+#[derive(Deserialize)]
+struct TerminalControl {
+    t: String,
+    rows: Option<u16>,
+    cols: Option<u16>,
 }
 
 pub fn start(app: AppHandle) -> std::io::Result<Endpoint> {
@@ -106,6 +114,16 @@ async fn handle(tcp: TcpStream, token: String, app: AppHandle) {
             match attached {
                 Ok((id, grids)) => record(ws, grids, id).await,
                 Err(e) => reject(ws, &e.to_string()).await,
+            }
+        }
+        "terminal" => {
+            let session = hello.session_id.as_deref().and_then(|id| {
+                app.try_state::<TerminalHub>()
+                    .and_then(|hub| hub.session(id))
+            });
+            match session {
+                Some(session) => terminal(ws, session).await,
+                None => reject(ws, "no such terminal").await,
             }
         }
         _ => reject(ws, "unknown role").await,
@@ -217,6 +235,45 @@ async fn record(mut ws: WebSocketStream<TcpStream>, grids: GridRecordings, id: S
     }
     let _ = ws.close(None).await;
     tracing::debug!(session = %id, "grid recorder detached");
+}
+
+async fn terminal(ws: WebSocketStream<TcpStream>, session: Arc<terminal::Session>) {
+    let (viewer, snapshot, mut rx) = session.attach();
+    tracing::debug!(id = %session.id, "terminal viewer attached");
+    let (mut sink, mut stream) = ws.split();
+    let mut open = sink.send(Message::binary(snapshot)).await.is_ok();
+    while open {
+        tokio::select! {
+            out = rx.recv() => {
+                let msg = match out {
+                    Some(Output::Data(bytes)) => Message::binary(bytes),
+                    Some(Output::Exit(code)) => {
+                        Message::text(serde_json::json!({ "t": "exit", "code": code }).to_string())
+                    }
+                    None => break,
+                };
+                open = sink.send(msg).await.is_ok();
+            }
+            incoming = stream.next() => match incoming {
+                Some(Ok(Message::Binary(data))) => session.write(data.to_vec()),
+                Some(Ok(Message::Text(text))) => {
+                    match serde_json::from_str::<TerminalControl>(text.as_str()) {
+                        Ok(TerminalControl { t, rows: Some(rows), cols: Some(cols) })
+                            if t == "resize" =>
+                        {
+                            session.resize(rows, cols);
+                        }
+                        _ => tracing::warn!(id = %session.id, "bad terminal message"),
+                    }
+                }
+                Some(Ok(Message::Close(_)) | Err(_)) | None => break,
+                Some(Ok(_)) => {}
+            },
+        }
+    }
+    session.detach(viewer);
+    let _ = sink.close().await;
+    tracing::debug!(id = %session.id, "terminal viewer detached");
 }
 
 #[tauri::command]

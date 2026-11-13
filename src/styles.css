@@ -757,8 +757,44 @@ input {
 }
 
 .log-region {
+	display: flex;
+	flex-direction: column;
 	min-height: 0;
 	overflow: hidden;
+}
+
+.bottom-tabs {
+	display: flex;
+	flex: none;
+	gap: 2px;
+	padding: 4px 8px 0;
+	border-bottom: 1px solid var(--border);
+	background: var(--panel);
+}
+
+.bottom-tabs button {
+	margin-bottom: -1px;
+	padding: 4px 14px;
+	border: 1px solid transparent;
+	border-radius: 6px 6px 0 0;
+	background: none;
+	color: var(--muted);
+}
+
+.bottom-tabs button[aria-selected='true'] {
+	border-color: var(--border);
+	border-bottom-color: var(--panel-raised);
+	background: var(--panel-raised);
+	color: var(--text);
+}
+
+.bottom-body {
+	flex: 1;
+	min-height: 0;
+}
+
+.bottom-body[hidden] {
+	display: none;
 }
 
 .pane-wide {

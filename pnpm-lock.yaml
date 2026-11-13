@@ -17,9 +17,18 @@ importers:
       '@tauri-apps/plugin-clipboard-manager':
         specifier: ^2.5.0
         version: 2.5.0
+      '@tauri-apps/plugin-dialog':
+        specifier: ^2.8.4
+        version: 2.8.4
       '@tauri-apps/plugin-log':
         specifier: ^2.10.2
         version: 2.10.2
+      '@xterm/addon-fit':
+        specifier: ^0.11.0
+        version: 0.11.0
+      '@xterm/xterm':
+        specifier: ^6.0.0
+        version: 6.0.0
       react:
         specifier: ^19.1.0
         version: 19.3.1
@@ -441,6 +450,9 @@ packages:
   '@tauri-apps/plugin-clipboard-manager@2.5.0':
     resolution: {integrity: sha512-dibUy1nKURYDXRMvjNk4deAbTZ5jPQ8wCE4nolt5xniryWgXQ4sK2GkFXoXlHbRdPzfZptZj95BRLfalA7m/2Q==}
 
+  '@tauri-apps/plugin-dialog@2.8.4':
+    resolution: {integrity: sha512-+6ZOiXenOaxXwb8qCbBPdT2jX2cFPaVVHGIskrpmJLpmWj+qKRTD6X/z9x7hTdSQn7NedcoXCkWGej4a7dC4lw==}
+
   '@tauri-apps/plugin-log@2.10.2':
     resolution: {integrity: sha512-Vx6uLv9GIqzrnze3poz1LThP1dFi7PHkOVesVewlT8zhYiVFhF7lQIIGXgjh5qtUUUNTzC9/Cv1DiRcSyxI/Mw==}
 
@@ -538,6 +550,12 @@ packages:
         optional: true
       oxc-transform-react:
         optional: true
+
+  '@xterm/addon-fit@0.11.0':
+    resolution: {integrity: sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g==}
+
+  '@xterm/xterm@6.0.0':
+    resolution: {integrity: sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg==}
 
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
@@ -1436,6 +1454,10 @@ snapshots:
     dependencies:
       '@tauri-apps/api': 2.12.4
 
+  '@tauri-apps/plugin-dialog@2.8.4':
+    dependencies:
+      '@tauri-apps/api': 2.12.4
+
   '@tauri-apps/plugin-log@2.10.2':
     dependencies:
       '@tauri-apps/api': 2.12.4
@@ -1554,6 +1576,10 @@ snapshots:
     dependencies:
       '@rolldown/pluginutils': 1.1.0
       vite: 8.3.8(yaml@2.9.1)
+
+  '@xterm/addon-fit@0.11.0': {}
+
+  '@xterm/xterm@6.0.0': {}
 
   acorn-jsx@5.3.2(acorn@8.19.0):
     dependencies:

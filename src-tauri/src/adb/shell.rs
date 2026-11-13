@@ -1,4 +1,4 @@
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 
 use super::{AdbError, AdbServer, AdbStream, DeviceSel};
 
@@ -7,6 +7,7 @@ const ID_STDOUT: u8 = 1;
 const ID_STDERR: u8 = 2;
 const ID_EXIT: u8 = 3;
 const ID_CLOSE_STDIN: u8 = 4;
+const ID_WINDOW_SIZE: u8 = 5;
 const MAX_PACKET: usize = 16 * 1024 * 1024;
 const STDIN_CHUNK: usize = 64 * 1024;
 
@@ -101,6 +102,55 @@ pub async fn shell_spawn(
 ) -> Result<ShellProcess, AdbError> {
     let stream = server.open(sel, &format!("shell,v2,raw:{cmd}")).await?;
     Ok(ShellProcess { stream })
+}
+
+pub struct ShellReader {
+    half: ReadHalf<AdbStream>,
+}
+
+impl ShellReader {
+    /// Not cancel-safe: dropping the future mid-packet desyncs the stream.
+    pub async fn next_event(&mut self) -> Result<Option<ShellEvent>, AdbError> {
+        match read_packet(&mut self.half).await? {
+            Some((id, payload)) => to_event(id, payload).map(Some),
+            None => Ok(None),
+        }
+    }
+}
+
+pub struct ShellWriter {
+    half: WriteHalf<AdbStream>,
+}
+
+impl ShellWriter {
+    pub async fn write_stdin(&mut self, data: &[u8]) -> Result<(), AdbError> {
+        for chunk in data.chunks(STDIN_CHUNK) {
+            self.half
+                .write_all(&encode_packet(ID_STDIN, chunk)?)
+                .await?;
+        }
+        Ok(())
+    }
+
+    pub async fn resize(&mut self, rows: u16, cols: u16) -> Result<(), AdbError> {
+        let size = format!("{rows}x{cols},0x0");
+        self.half
+            .write_all(&encode_packet(ID_WINDOW_SIZE, size.as_bytes())?)
+            .await?;
+        Ok(())
+    }
+}
+
+pub async fn shell_pty(
+    server: &AdbServer,
+    sel: &DeviceSel,
+    term: &str,
+) -> Result<(ShellReader, ShellWriter), AdbError> {
+    let stream = server
+        .open(sel, &format!("shell,v2,TERM={term},pty:"))
+        .await?;
+    let (read, write) = tokio::io::split(stream);
+    Ok((ShellReader { half: read }, ShellWriter { half: write }))
 }
 
 pub async fn shell(

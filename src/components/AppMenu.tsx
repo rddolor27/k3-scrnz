@@ -2,7 +2,8 @@ import { type JSX, useEffect, useRef, useState } from 'react'
 
 import { type AppAction, appAction, installApkBytes } from '../lib/ipc'
 import { warn } from '../lib/log'
-import { APP_PACKAGE_EVENT, getLogcatInfo, setAppPackage } from '../lib/logcat'
+import { setAppPackage } from '../lib/logcat'
+import { useAppPackage } from '../state/app-package'
 import { useNote } from '../state/note'
 import { AppPicker } from './AppPicker'
 
@@ -22,31 +23,10 @@ export const AppMenu = ({ serial }: AppMenuProps): JSX.Element => {
 	const [open, setOpen] = useState(false)
 	const [picking, setPicking] = useState(false)
 	const [busy, setBusy] = useState(false)
-	const [appPackage, setCurrentPackage] = useState<string | null>(null)
+	const appPackage = useAppPackage(serial)
 	const { note, showNote } = useNote()
 	const rootRef = useRef<HTMLSpanElement>(null)
 	const fileInput = useRef<HTMLInputElement>(null)
-
-	useEffect(() => {
-		let live = true
-		const load = (): void => {
-			getLogcatInfo(serial)
-				.then((info) => {
-					if (live) setCurrentPackage(info.appPackage)
-				})
-				.catch((e: unknown) => {
-					void warn(
-						`app menu: package of ${serial} unknown: ${String(e)}`,
-					)
-				})
-		}
-		load()
-		window.addEventListener(APP_PACKAGE_EVENT, load)
-		return (): void => {
-			live = false
-			window.removeEventListener(APP_PACKAGE_EVENT, load)
-		}
-	}, [serial])
 
 	useEffect(() => {
 		if (!open) return
