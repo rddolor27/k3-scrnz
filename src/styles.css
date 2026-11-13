@@ -1008,6 +1008,10 @@ code {
 	color: var(--bad);
 }
 
+.denied-note button.link {
+	margin-left: 8px;
+}
+
 .explorer-target {
 	display: inline-flex;
 	align-items: center;

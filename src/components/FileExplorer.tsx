@@ -37,6 +37,52 @@ const KIND_ICON: Record<FileKind, IconName> = {
 	link: 'link',
 	other: 'special',
 }
+// Mirrors delete_path's refusals in files.rs so the button explains instead of failing.
+const PROTECTED = new Set([
+	'/sdcard/Android',
+	'/storage/emulated',
+	'/storage/emulated/0',
+	'/storage/emulated/0/Android',
+	'/storage/self',
+	'/storage/self/primary',
+	'/mnt/sdcard',
+	'/data/local/tmp',
+])
+const APP_DATA_ROOT = /^\/data\/(data|user\/\d+)\/[^/]+$/
+const PERMISSION_DENIED = /permission denied/i
+
+const deleteRefusal = (path: string): string | null => {
+	if (path.split('/').length - 1 < 2) {
+		return 'Top-level folders are never deleted'
+	}
+	if (PROTECTED.has(path)) return 'This storage folder is never deleted'
+	if (APP_DATA_ROOT.test(path)) return "An app's data folder is never deleted"
+	return null
+}
+
+interface DeniedHelp {
+	hint: string
+	jump: string | null
+}
+
+const deniedHelp = (dir: string): DeniedHelp => {
+	if (dir === '/storage' || dir === '/storage/emulated') {
+		return {
+			hint: 'Your files are in /storage/emulated/0, the same folder as /sdcard.',
+			jump: '/storage/emulated/0',
+		}
+	}
+	if (dir === '/data' || dir.startsWith('/data/')) {
+		return {
+			hint: "For an app's private files, use App data at the top (debug builds only).",
+			jump: '/data/local/tmp',
+		}
+	}
+	return {
+		hint: 'If you know a folder inside it, type its path in the box at the top.',
+		jump: null,
+	}
+}
 
 type Status =
 	| { kind: 'busy' | 'info' | 'error'; text: string }
@@ -53,7 +99,14 @@ interface EntryRow {
 
 type Row =
 	| EntryRow
-	| { type: 'note'; key: string; depth: number; text: string; error: boolean }
+	| {
+			type: 'note'
+			key: string
+			dir: string
+			depth: number
+			text: string
+			error: boolean
+	  }
 	| { type: 'create'; key: string; depth: number; parent: string }
 
 // Names with line breaks can't be addressed safely: shown, not acted on.
@@ -94,6 +147,7 @@ const flatten = (
 			rows.push({
 				type: 'note',
 				key: `${dir}#loading`,
+				dir,
 				depth,
 				text: 'Loading…',
 				error: false,
@@ -104,6 +158,7 @@ const flatten = (
 			rows.push({
 				type: 'note',
 				key: `${dir}#error`,
+				dir,
 				depth,
 				text: folder.error,
 				error: true,
@@ -114,6 +169,7 @@ const flatten = (
 			rows.push({
 				type: 'note',
 				key: `${dir}#empty`,
+				dir,
 				depth,
 				text: 'Empty folder',
 				error: false,
@@ -377,7 +433,9 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 		} else if (e.key === 'Enter' && !e.repeat && selectedRow) {
 			open(selectedRow)
 		} else if (e.key === 'Delete' && actionRow) {
-			setConfirming(actionRow.path)
+			const refused = deleteRefusal(actionRow.path)
+			if (refused) setStatus({ kind: 'error', text: refused })
+			else setConfirming(actionRow.path)
 		} else if (e.key === 'F5') {
 			e.preventDefault()
 			tree.refresh()
@@ -389,6 +447,7 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 
 	const confirmRow =
 		actionRow && confirming === actionRow.path ? actionRow : null
+	const refusal = actionRow ? deleteRefusal(actionRow.path) : null
 
 	return (
 		<div className='explorer'>
@@ -477,7 +536,13 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 					Download
 				</button>
 				<button
-					disabled={!actionRow}
+					disabled={!actionRow || refusal !== null}
+					title={
+						refusal ??
+						(actionRow
+							? 'Delete the selected item (Del)'
+							: 'Select a file or folder to delete')
+					}
 					onClick={() => actionRow && setConfirming(actionRow.path)}
 				>
 					<Icon name='trash' />
@@ -607,11 +672,13 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 									</tr>
 								)
 							}
+							const denied =
+								row.error && PERMISSION_DENIED.test(row.text)
 							return (
 								<tr
 									key={row.key}
 									className={
-										row.error
+										row.error && !denied
 											? 'tree-note err'
 											: 'tree-note'
 									}
@@ -620,7 +687,19 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 										colSpan={4}
 										style={{ paddingLeft: indent + 10 }}
 									>
-										{row.text}
+										{denied ? (
+											<DeniedNote
+												help={deniedHelp(row.dir)}
+												onJump={(path) =>
+													changeRoot({
+														path,
+														runAs: null,
+													})
+												}
+											/>
+										) : (
+											row.text
+										)}
 									</td>
 								</tr>
 							)
@@ -707,6 +786,25 @@ const TreeRow = ({
 		<td className='mode'>{row.entry.mode}</td>
 	</tr>
 )
+
+interface DeniedNoteProps {
+	help: DeniedHelp
+	onJump: (path: string) => void
+}
+
+const DeniedNote = ({ help, onJump }: DeniedNoteProps): JSX.Element => {
+	const { hint, jump } = help
+	return (
+		<span className='denied-note'>
+			Android doesn't let adb open this folder. {hint}
+			{jump !== null && (
+				<button className='link' onClick={() => onJump(jump)}>
+					Open {jump}
+				</button>
+			)}
+		</span>
+	)
+}
 
 interface PathInputProps {
 	path: string

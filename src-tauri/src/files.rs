@@ -600,7 +600,9 @@ pub async fn delete_path(
         || PROTECTED.contains(&path.as_str())
         || is_app_data_root(&path)
     {
-        return Err(FilesError::Refused(format!("refusing to delete {path}")));
+        return Err(FilesError::Refused(format!(
+            "{path} is protected: top-level, storage and app-data folders are never deleted"
+        )));
     }
     target
         .run_ok(&format!("rm -r {}", shell_quote(&path)))
