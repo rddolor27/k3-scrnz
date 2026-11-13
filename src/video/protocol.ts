@@ -21,11 +21,17 @@ export interface WorkerUntapRequest {
 	type: 'untap'
 }
 
+export interface WorkerVisibilityRequest {
+	type: 'visibility'
+	visible: boolean
+}
+
 export type WorkerRequest =
 	| WorkerInit
 	| WorkerScreenshotRequest
 	| WorkerTapRequest
 	| WorkerUntapRequest
+	| WorkerVisibilityRequest
 
 export interface TapFrame {
 	bitmap: ImageBitmap

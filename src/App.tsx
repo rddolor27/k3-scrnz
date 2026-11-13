@@ -12,14 +12,11 @@ import { FOCUS_LOG_FILTER_EVENT } from './lib/logcat'
 import { useDevices } from './state/devices'
 import { useLoopbackCheck } from './state/transport'
 
-const KEEP_HIDDEN_MS = 15_000
-
 export const App = (): JSX.Element => {
 	const { devices, adb } = useDevices()
 	const loopback = useLoopbackCheck()
 	const [selected, setSelected] = useState<string | null>(null)
-	const [hiddenAt, setHiddenAt] = useState<Record<string, number>>({})
-	const [paused, setPaused] = useState(false)
+	const [visited, setVisited] = useState<ReadonlySet<string>>(() => new Set())
 	const [grid, setGrid] = useState(false)
 	const current =
 		devices.find((d) => d.serial === selected) ?? devices[0] ?? null
@@ -32,58 +29,18 @@ export const App = (): JSX.Element => {
 	// device pane must never mirror it at once.
 	const selectGrid = (): void => {
 		setGrid(true)
-		setHiddenAt({})
 	}
 
 	const select = (serial: string): void => {
-		if (showGrid) {
-			setGrid(false)
-			setSelected(serial)
-			return
-		}
-		if (currentSerial && currentSerial !== serial) {
-			const now = Date.now()
-			setHiddenAt((hidden) => {
-				const next = { ...hidden, [currentSerial]: now }
-				delete next[serial]
-				return next
-			})
-		}
+		setVisited((prev) => {
+			const keep = [serial, currentSerial].filter(
+				(s): s is string => s !== null && !prev.has(s),
+			)
+			return keep.length === 0 ? prev : new Set([...prev, ...keep])
+		})
+		setGrid(false)
 		setSelected(serial)
 	}
-
-	useEffect(() => {
-		const timer = window.setInterval(() => {
-			const now = Date.now()
-			setHiddenAt((hidden) => {
-				const kept = Object.entries(hidden).filter(
-					([, at]) => now - at < KEEP_HIDDEN_MS,
-				)
-				return kept.length === Object.keys(hidden).length
-					? hidden
-					: Object.fromEntries(kept)
-			})
-		}, 1000)
-		return (): void => window.clearInterval(timer)
-	}, [])
-
-	// visibilitychange: Tauri's backgroundThrottling is unsupported on Windows.
-	useEffect(() => {
-		let timer = 0
-		const onVisibility = (): void => {
-			window.clearTimeout(timer)
-			if (document.hidden) {
-				timer = window.setTimeout(() => setPaused(true), KEEP_HIDDEN_MS)
-			} else {
-				setPaused(false)
-			}
-		}
-		document.addEventListener('visibilitychange', onVisibility)
-		return (): void => {
-			window.clearTimeout(timer)
-			document.removeEventListener('visibilitychange', onVisibility)
-		}
-	}, [])
 
 	useEffect(() => {
 		void setVisibleDevice(visibleSerial)
@@ -134,13 +91,12 @@ export const App = (): JSX.Element => {
 		})
 	}
 
-	const mounted = devices.filter(
-		(d) =>
-			!paused &&
-			!showGrid &&
-			(d.serial === currentSerial ||
-				Object.prototype.hasOwnProperty.call(hiddenAt, d.serial)),
-	)
+	// Opened panes stay mounted (decoding pauses while hidden), so returning never shows a black canvas.
+	const mounted = showGrid
+		? []
+		: devices.filter(
+				(d) => d.serial === currentSerial || visited.has(d.serial),
+			)
 
 	return (
 		<div className='app'>
@@ -161,7 +117,7 @@ export const App = (): JSX.Element => {
 			</header>
 			<main className='content'>
 				{!current && <NoDevices adb={adb} />}
-				{showGrid && !paused && (
+				{showGrid && (
 					<DeviceGrid devices={onlineDevices} onOpen={select} />
 				)}
 				{mounted.map((device) => (

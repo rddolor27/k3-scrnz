@@ -36,6 +36,8 @@ let tapPort: MessagePort | null = null
 let tapTimer = 0
 let tapSentAt = 0
 let tapPending = false
+let visible = true
+let keyRetry = 0
 
 const post = (event: WorkerEvent, transfer: Transferable[] = []): void => {
 	self.postMessage(event, { transfer })
@@ -95,9 +97,16 @@ const startTap = (port: MessagePort): void => {
 const requestKey = (): void => {
 	needKey = true
 	prependNext = true
-	const now = performance.now()
-	if (now - lastNeedKey < NEED_KEY_EVERY_MS) return
-	lastNeedKey = now
+	const wait = NEED_KEY_EVERY_MS - (performance.now() - lastNeedKey)
+	if (wait > 0) {
+		// A still screen sends no frame that could trigger the request later.
+		keyRetry ||= self.setTimeout(() => {
+			keyRetry = 0
+			if (needKey && visible) requestKey()
+		}, wait)
+		return
+	}
+	lastNeedKey = performance.now()
 	post({ type: 'need-key' })
 }
 
@@ -214,6 +223,12 @@ const configure = (): void => {
 
 const decode = (data: Uint8Array, key: boolean): void => {
 	if (failed) return
+	// Hidden: skip decoding; showing again asks for a key frame.
+	if (!visible) {
+		needKey = true
+		prependNext = true
+		return
+	}
 	if (!decoder || decoder.state !== 'configured') {
 		configure()
 		if (!decoder || decoder.state !== 'configured') return
@@ -298,6 +313,11 @@ self.onmessage = (e: MessageEvent<WorkerRequest>): void => {
 	}
 	if (request.type === 'untap') {
 		stopTap()
+		return
+	}
+	if (request.type === 'visibility') {
+		visible = request.visible
+		if (visible && needKey && config) requestKey()
 		return
 	}
 	canvas = request.canvas
