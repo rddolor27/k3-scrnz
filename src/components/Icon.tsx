@@ -54,7 +54,7 @@ const GLYPHS = {
 	chevronDown: <path d='M4.5 6.5 8 10l3.5-3.5' />,
 	chevronRight: <path d='M6.5 4.5 10 8l-3.5 3.5' />,
 	chevronLeft: <path d='M9.5 4.5 6 8l3.5 3.5' />,
-	collapse: <path d='M5 3 8 6l3-3M5 13l3-3 3 3' />,
+	collapse: <path d='M3.5 8h9M5.5 2.5 8 5l2.5-2.5M5.5 13.5 8 11l2.5 2.5' />,
 	close: <path d='M4.5 4.5l7 7M11.5 4.5l-7 7' />,
 	plus: <path d='M8 3.5v9M3.5 8h9' />,
 	devices: (
