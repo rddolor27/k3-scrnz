@@ -5,6 +5,7 @@ import { type JSX, useRef, useState } from 'react'
 
 import { warn } from '../lib/log'
 import {
+	type ShellInfo,
 	startTerminal,
 	stopTerminal,
 	type TerminalSpec,
@@ -12,6 +13,7 @@ import {
 } from '../lib/terminal'
 import { useAppPackage } from '../state/app-package'
 import { useFolderDrop } from '../state/folder-drop'
+import { useTerminalShells } from '../state/terminal-shells'
 import {
 	activateTerminal,
 	addTerminal,
@@ -22,6 +24,7 @@ import {
 	useDeviceTerminals,
 } from '../state/terminals'
 import { Icon } from './Icon'
+import { ShellPicker } from './ShellPicker'
 import { TerminalView } from './TerminalView'
 
 const PACKAGE_PATTERN = /^[A-Za-z]\w*(\.[A-Za-z]\w*)+$/
@@ -64,6 +67,31 @@ const projectLabel = (session: TerminalStarted): string =>
 			? 'Expo'
 			: 'Folder'
 
+const projectSpec = (
+	path: string,
+	run: boolean,
+	shell: string | null,
+): TerminalSpec =>
+	shell === null
+		? { kind: 'project', path, run }
+		: { kind: 'project', path, run, shell }
+
+const shellLabel = (
+	shells: readonly ShellInfo[],
+	id: string | null,
+): string | null =>
+	id === null ? null : (shells.find((s) => s.id === id)?.label ?? id)
+
+const tabTitle = (
+	session: TerminalStarted,
+	deviceName: string,
+	shells: readonly ShellInfo[],
+): string => {
+	if (session.cwd === null) return `Shell on ${deviceName}`
+	const label = shellLabel(shells, session.shell)
+	return label === null ? session.cwd : `${session.cwd}\n${label}`
+}
+
 interface TerminalPanelProps {
 	serial: string
 	deviceName: string
@@ -75,6 +103,7 @@ export const TerminalPanel = ({
 }: TerminalPanelProps): JSX.Element => {
 	const { sessions, active } = useDeviceTerminals(serial)
 	const appPackage = useAppPackage(serial)
+	const { shells, current: shell, select: selectShell } = useTerminalShells()
 	const [busy, setBusy] = useState(false)
 	const [failure, setFailure] = useState<string | null>(null)
 	const panelRef = useRef<HTMLDivElement>(null)
@@ -100,7 +129,7 @@ export const TerminalPanel = ({
 	}
 
 	const openProject = (path: string): void =>
-		start({ kind: 'project', path, run: true }, null)
+		start(projectSpec(path, true, shell?.id ?? null), null)
 
 	const pickFolder = (): void => {
 		open({
@@ -121,7 +150,7 @@ export const TerminalPanel = ({
 		const spec: TerminalSpec =
 			session.kind === 'device' || session.cwd === null
 				? { kind: 'device' }
-				: { kind: 'project', path: session.cwd, run: false }
+				: projectSpec(session.cwd, false, session.shell)
 		start(spec, session.id)
 	}
 
@@ -134,6 +163,7 @@ export const TerminalPanel = ({
 
 	const dragging = useFolderDrop(panelRef, openProject)
 	const current = sessions.find((s) => s.id === active) ?? null
+	const currentShell = current ? shellLabel(shells, current.shell) : null
 	const quick =
 		current?.kind === 'device'
 			? [...DEVICE_COMMANDS, ...appCommands(appPackage)]
@@ -146,8 +176,9 @@ export const TerminalPanel = ({
 					className='terminal-link'
 					title={`Commands here run only on ${deviceName} (${serial})`}
 				>
+					<span className='dot ok' />
 					Linked to <strong>{deviceName}</strong>
-					<span className='muted'> · {serial}</span>
+					<span className='tab-serial'>{serial}</span>
 				</span>
 				<div className='terminal-tabs' role='tablist'>
 					{sessions.map((s) => (
@@ -160,9 +191,10 @@ export const TerminalPanel = ({
 							}
 						>
 							<button
+								className='terminal-tab-main'
 								role='tab'
 								aria-selected={s.id === active}
-								title={s.cwd ?? `Shell on ${deviceName}`}
+								title={tabTitle(s, deviceName, shells)}
 								onClick={() => activateTerminal(serial, s.id)}
 							>
 								<Icon
@@ -172,7 +204,9 @@ export const TerminalPanel = ({
 											: 'folder'
 									}
 								/>
-								{s.title}
+								<span className='terminal-tab-title'>
+									{s.title}
+								</span>
 							</button>
 							<button
 								className='terminal-tab-close'
@@ -185,17 +219,36 @@ export const TerminalPanel = ({
 						</span>
 					))}
 				</div>
-				<button
-					disabled={busy}
-					onClick={() => start({ kind: 'device' }, null)}
-				>
-					<Icon name='terminal' />
-					Device shell
-				</button>
-				<button disabled={busy} onClick={pickFolder}>
-					<Icon name='folderOpen' />
-					Open project folder…
-				</button>
+				<div className='terminal-controls'>
+					<button
+						disabled={busy}
+						onClick={() => start({ kind: 'device' }, null)}
+					>
+						<Icon name='terminal' />
+						Device shell
+					</button>
+					<div className='terminal-open'>
+						<button
+							disabled={busy}
+							title={
+								shell
+									? `Open a project folder in ${shell.label}`
+									: undefined
+							}
+							onClick={pickFolder}
+						>
+							<Icon name='folderOpen' />
+							Open project folder…
+						</button>
+						{shell && shells.length > 1 && (
+							<ShellPicker
+								shells={shells}
+								value={shell.id}
+								onChange={selectShell}
+							/>
+						)}
+					</div>
+				</div>
 			</div>
 			{current && (
 				<div className='terminal-actions'>
@@ -216,6 +269,14 @@ export const TerminalPanel = ({
 							<span className='terminal-badge'>
 								{projectLabel(current)}
 							</span>
+							{currentShell && (
+								<span
+									className='terminal-shell-tag'
+									title='Shell this terminal runs'
+								>
+									{currentShell}
+								</span>
+							)}
 							<span
 								className='terminal-cwd'
 								title={current.cwd ?? ''}
@@ -237,7 +298,7 @@ export const TerminalPanel = ({
 								</button>
 							)}
 							<span
-								className='muted'
+								className='terminal-env'
 								title='adb, Gradle and the React Native CLI target this device; adb is the Android SDK one'
 							>
 								ANDROID_SERIAL={serial}
@@ -256,15 +317,30 @@ export const TerminalPanel = ({
 			<div className='terminal-body'>
 				{sessions.length === 0 && (
 					<div className='terminal-empty'>
-						<p>
-							Open a <strong>device shell</strong> to run commands
-							on {deviceName}, or open a{' '}
-							<strong>project folder</strong> to build and run it
-							on this device.
+						<p className='terminal-empty-title'>
+							<Icon name='terminal' />
+							No terminal open
 						</p>
-						<p className='muted'>
-							React Native and Expo projects start building right
-							away. You can also drop a folder here.
+						<p>
+							Run commands on {deviceName}, or open a project
+							folder to build and run it here.
+						</p>
+						<div className='terminal-empty-actions'>
+							<button
+								disabled={busy}
+								onClick={() => start({ kind: 'device' }, null)}
+							>
+								<Icon name='terminal' />
+								Device shell
+							</button>
+							<button disabled={busy} onClick={pickFolder}>
+								<Icon name='folderOpen' />
+								Open project folder…
+							</button>
+						</div>
+						<p className='terminal-empty-hint'>
+							Drop a folder here to open it. React Native and Expo
+							projects start building right away.
 						</p>
 					</div>
 				)}

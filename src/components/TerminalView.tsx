@@ -3,31 +3,17 @@ import '@xterm/xterm/css/xterm.css'
 import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
-import { type JSX, useEffect, useRef } from 'react'
+import { type JSX, useEffect, useRef, useState } from 'react'
 
 import { getEndpoint } from '../lib/ipc'
 import { warn } from '../lib/log'
 import type { TerminalStarted } from '../lib/terminal'
+import { TERMINAL_FONT, TERMINAL_THEME } from '../lib/terminal-theme'
 import { connect } from '../lib/ws'
 import { registerControls } from '../state/terminals'
+import { Icon } from './Icon'
 
 const RECONNECT_MS = 1000
-const FONT = '"Cascadia Mono", Consolas, ui-monospace, monospace'
-const THEME = {
-	background: '#111317',
-	foreground: '#e6e8eb',
-	cursor: '#4c8dff',
-	cursorAccent: '#111317',
-	selectionBackground: 'rgba(76, 141, 255, 0.35)',
-	black: '#191c21',
-	brightBlack: '#6e7681',
-	red: '#f85149',
-	green: '#3fb950',
-	yellow: '#d29922',
-	blue: '#4c8dff',
-	cyan: '#22d3ee',
-	white: '#e6e8eb',
-}
 const DIM = '\x1b[90m'
 const RESET = '\x1b[0m'
 
@@ -35,6 +21,13 @@ interface ExitMessage {
 	t: 'exit'
 	code: number | null
 }
+
+interface ExitState {
+	code: number | null
+}
+
+const exitText = (code: number | null): string =>
+	code === null ? 'Session ended' : `Exited with code ${code}`
 
 const isExitMessage = (value: unknown): value is ExitMessage =>
 	typeof value === 'object' &&
@@ -64,6 +57,7 @@ export const TerminalView = ({
 }: TerminalViewProps): JSX.Element => {
 	const hostRef = useRef<HTMLDivElement>(null)
 	const restartRef = useRef(onRestart)
+	const [exit, setExit] = useState<ExitState | null>(null)
 
 	useEffect(() => {
 		restartRef.current = onRestart
@@ -73,9 +67,13 @@ export const TerminalView = ({
 		const host = hostRef.current
 		if (!host) return
 		const term = new Terminal({
-			fontFamily: FONT,
+			fontFamily: TERMINAL_FONT,
 			fontSize: 13,
-			theme: THEME,
+			lineHeight: 1.1,
+			theme: TERMINAL_THEME,
+			minimumContrastRatio: 4.5,
+			cursorStyle: 'bar',
+			cursorWidth: 2,
 			cursorBlink: true,
 			scrollback: 10_000,
 		})
@@ -106,13 +104,8 @@ export const TerminalView = ({
 		}
 		const showExit = (code: number | null): void => {
 			exited = true
-			const how =
-				code === null ? 'Session ended' : `Exited with code ${code}`
-			const next =
-				session.kind === 'device'
-					? 'press Enter to open a new shell'
-					: 'press Enter to open the terminal again'
-			term.write(`\r\n${DIM}[${how}; ${next}]${RESET}\r\n`)
+			setExit({ code })
+			term.write(`\r\n${DIM}[${exitText(code)}]${RESET}\r\n`)
 		}
 
 		const open = async (): Promise<void> => {
@@ -214,7 +207,31 @@ export const TerminalView = ({
 			socket?.close()
 			term.dispose()
 		}
-	}, [session.id, session.kind])
+	}, [session.id])
 
-	return <div className='terminal-view' ref={hostRef} hidden={hidden} />
+	const failed = exit !== null && exit.code !== null && exit.code !== 0
+
+	return (
+		<div className='terminal-view' hidden={hidden}>
+			<div className='terminal-stage'>
+				<div className='terminal-host' ref={hostRef} />
+			</div>
+			{exit && (
+				<div
+					className={
+						failed ? 'terminal-exit failed' : 'terminal-exit'
+					}
+					role='status'
+				>
+					<span className={failed ? 'dot bad' : 'dot'} />
+					<span>{exitText(exit.code)}</span>
+					<button onClick={onRestart}>
+						<Icon name='refresh' />
+						{session.kind === 'device' ? 'New shell' : 'Restart'}
+					</button>
+					<span className='terminal-exit-hint'>or press Enter</span>
+				</div>
+			)}
+		</div>
+	)
 }
