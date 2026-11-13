@@ -8,7 +8,7 @@ import {
 
 import type { DeviceView } from '../lib/ipc'
 import { CustomerScreens, useCustomerDisplaysOf } from './CustomerScreens'
-import { GridRecordBar } from './GridRecordBar'
+import { GridTools } from './GridTools'
 import { Icon } from './Icon'
 import { ScreenView } from './ScreenView'
 
@@ -228,11 +228,13 @@ const isTileChrome = (target: EventTarget, tile: EventTarget): boolean =>
 interface DeviceGridProps {
 	devices: DeviceView[]
 	onOpen: (serial: string) => void
+	toolsSlot: HTMLElement | null
 }
 
 export const DeviceGrid = ({
 	devices,
 	onOpen,
+	toolsSlot,
 }: DeviceGridProps): JSX.Element => {
 	const gridRef = useRef<HTMLDivElement>(null)
 	const [box, setBox] = useState<Size>({ w: 960, h: 600 })
@@ -370,7 +372,10 @@ export const DeviceGrid = ({
 	)
 	return (
 		<div className='grid-view'>
-			<GridRecordBar serials={devices.map((device) => device.serial)}>
+			<GridTools
+				serials={devices.map((device) => device.serial)}
+				slot={toolsSlot}
+			>
 				{arranged && (
 					<button
 						onClick={resetLayout}
@@ -379,7 +384,7 @@ export const DeviceGrid = ({
 						Reset layout
 					</button>
 				)}
-			</GridRecordBar>
+			</GridTools>
 			<div className='device-grid' ref={gridRef}>
 				{devices.map((device, index) => {
 					const wide = isWide(device.serial)

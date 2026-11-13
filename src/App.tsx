@@ -18,6 +18,7 @@ export const App = (): JSX.Element => {
 	const [selected, setSelected] = useState<string | null>(null)
 	const [visited, setVisited] = useState<ReadonlySet<string>>(() => new Set())
 	const [grid, setGrid] = useState(false)
+	const [gridTools, setGridTools] = useState<HTMLElement | null>(null)
 	const current =
 		devices.find((d) => d.serial === selected) ?? devices[0] ?? null
 	const currentSerial = current?.serial ?? null
@@ -113,12 +114,17 @@ export const App = (): JSX.Element => {
 					onSelectGrid={onlineDevices.length > 0 ? selectGrid : null}
 					gridSelected={showGrid}
 				/>
+				<span className='topbar-tools' ref={setGridTools} />
 				<EmulatorMenu onOpen={select} />
 			</header>
 			<main className='content'>
 				{!current && <NoDevices adb={adb} />}
 				{showGrid && (
-					<DeviceGrid devices={onlineDevices} onOpen={select} />
+					<DeviceGrid
+						devices={onlineDevices}
+						onOpen={select}
+						toolsSlot={gridTools}
+					/>
 				)}
 				{mounted.map((device) => (
 					<div
