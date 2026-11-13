@@ -102,6 +102,7 @@ pub fn run() {
             displays::set_visible_device,
             files::list_dir,
             files::download_file,
+            files::download_folder,
             files::upload_path,
             files::upload_bytes,
             files::make_dir,

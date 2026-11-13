@@ -15,6 +15,10 @@ const MAX_UPLOAD: u64 = 256 * 1024 * 1024;
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_FOLDER_FILES: usize = 5_000;
+const MAX_FOLDER_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+const S_IFMT: u32 = 0o170_000;
+const S_IFDIR: u32 = 0o040_000;
 
 const PROTECTED: &[&str] = &[
     "/sdcard/Android",
@@ -389,6 +393,137 @@ pub async fn download_file(
     }
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderSaved {
+    pub path: String,
+    pub files: usize,
+    pub failed: Vec<String>,
+}
+
+struct RemoteItem {
+    dir: bool,
+    size: u64,
+    relative: String,
+}
+
+fn parse_tree(stdout: &str, marker: &str, base: &str) -> Vec<RemoteItem> {
+    stdout
+        .split(marker)
+        .filter_map(|record| {
+            let record = record.strip_suffix('\n').unwrap_or(record);
+            let (mode, rest) = record.split_once(' ')?;
+            let (size, full) = rest.split_once(' ')?;
+            let relative = full.strip_prefix(base)?;
+            if relative.is_empty() || relative.contains(['\n', '\r']) {
+                return None;
+            }
+            let mode = u32::from_str_radix(mode, 16).ok()?;
+            Some(RemoteItem {
+                dir: mode & S_IFMT == S_IFDIR,
+                size: size.parse().ok()?,
+                relative: relative.to_owned(),
+            })
+        })
+        .collect()
+}
+
+async fn create_unique_dir(parent: &Path, name: &str) -> Result<PathBuf, FilesError> {
+    for n in 0..1000 {
+        let candidate = if n == 0 {
+            parent.join(name)
+        } else {
+            parent.join(format!("{name} ({n})"))
+        };
+        match tokio::fs::create_dir(&candidate).await {
+            Ok(()) => return Ok(candidate),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Err(FilesError::Refused(format!(
+        "too many copies of {name} in {}",
+        parent.display()
+    )))
+}
+
+#[tauri::command]
+pub async fn download_folder(
+    app: AppHandle,
+    serial: String,
+    path: String,
+    run_as: Option<String>,
+) -> Result<FolderSaved, FilesError> {
+    let target = Target::new(serial.clone(), run_as)?;
+    let path = normalize_path(&path)?;
+    let Some(name) = path.rsplit('/').next().filter(|name| !name.is_empty()) else {
+        return Err(FilesError::Refused(
+            "pick a folder to download, not / itself".into(),
+        ));
+    };
+    let base = format!("{path}/");
+    let marker = format!("@tri:{:016x}@", rand::random::<u64>());
+    let cmd = format!(
+        "find {} -mindepth 1 \\( -type d -o -type f \\) -exec stat -c {} {{}} +",
+        shell_quote(&base),
+        shell_quote(&format!("{marker}%f %s %n"))
+    );
+    let out = within(COMMAND_TIMEOUT, target.run(&cmd)).await?;
+    let items = parse_tree(&String::from_utf8_lossy(&out.stdout), &marker, &base);
+    if items.is_empty() && out.exit_code != Some(0) {
+        return Err(FilesError::Device(output_text(&out.stderr, b"")));
+    }
+    let files = items.iter().filter(|item| !item.dir).count();
+    let bytes: u64 = items
+        .iter()
+        .filter(|item| !item.dir)
+        .map(|item| item.size)
+        .sum();
+    if files > MAX_FOLDER_FILES || bytes > MAX_FOLDER_BYTES {
+        return Err(FilesError::Refused(format!(
+            "{path} holds {files} files ({} MB); folder downloads stop at {MAX_FOLDER_FILES} files or 4 GB",
+            bytes / 1_000_000
+        )));
+    }
+
+    let parent = downloads_root(&app)?.join(local_name(&serial));
+    tokio::fs::create_dir_all(&parent).await?;
+    let root = create_unique_dir(&parent, &local_name(name)).await?;
+    let mut saved = 0;
+    let mut failed = Vec::new();
+    for item in &items {
+        let local = item
+            .relative
+            .split('/')
+            .fold(root.clone(), |dir, part| dir.join(local_name(part)));
+        if item.dir {
+            tokio::fs::create_dir_all(&local).await?;
+            continue;
+        }
+        if let Some(dir) = local.parent() {
+            tokio::fs::create_dir_all(dir).await?;
+        }
+        let part = PathBuf::from(format!("{}.part", local.display()));
+        match download_into(&target, &format!("{base}{}", item.relative), &part).await {
+            Ok(()) => {
+                tokio::fs::rename(&part, &local).await?;
+                saved += 1;
+            }
+            Err(e) => {
+                let _ = tokio::fs::remove_file(&part).await;
+                tracing::warn!(%serial, file = %item.relative, "folder download skipped a file: {e}");
+                failed.push(item.relative.clone());
+            }
+        }
+    }
+    tracing::info!(%serial, %path, local = %root.display(), files = saved, failed = failed.len(), "folder downloaded");
+    Ok(FolderSaved {
+        path: root.display().to_string(),
+        files: saved,
+        failed,
+    })
+}
+
 async fn download_into(target: &Target, path: &str, part: &Path) -> Result<(), FilesError> {
     let mut file = tokio::fs::File::create(part).await?;
     let result = match &target.run_as {
@@ -629,7 +764,7 @@ pub fn reveal_file(app: AppHandle, path: String) -> Result<(), FilesError> {
     }
     let root = std::fs::canonicalize(downloads_root(&app)?).map_err(|_| refused())?;
     let resolved = std::fs::canonicalize(&local).map_err(|_| refused())?;
-    if !resolved.starts_with(&root) || !resolved.is_file() {
+    if !resolved.starts_with(&root) || !(resolved.is_file() || resolved.is_dir()) {
         return Err(refused());
     }
     // Not `resolved`: on Windows it is a `\\?\` path, which Explorer rejects.

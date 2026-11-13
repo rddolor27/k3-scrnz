@@ -117,6 +117,22 @@ export const downloadFile = (
 		runAs: file.runAs,
 	})
 
+export interface FolderSaved {
+	path: string
+	files: number
+	failed: string[]
+}
+
+export const downloadFolder = (
+	serial: string,
+	folder: FileLocation,
+): Promise<FolderSaved> =>
+	invoke<FolderSaved>('download_folder', {
+		serial,
+		path: folder.path,
+		runAs: folder.runAs,
+	})
+
 export const uploadPath = (
 	serial: string,
 	localPath: string,

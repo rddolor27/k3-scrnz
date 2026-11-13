@@ -11,6 +11,7 @@ import {
 import {
 	deletePath,
 	downloadFile,
+	downloadFolder,
 	type FileEntry,
 	type FileKind,
 	type FileLocation,
@@ -26,8 +27,8 @@ import { type FolderState, runAsFor, useFileTree } from '../state/files'
 import { Icon, type IconName } from './Icon'
 import { IconButton } from './IconButton'
 
-const HOME: FileLocation = { path: '/sdcard', runAs: null }
-const QUICK_PATHS = ['/sdcard', '/data/local/tmp', '/']
+const HOME: FileLocation = { path: '/', runAs: null }
+const QUICK_PATHS = ['/', '/sdcard', '/data/local/tmp']
 const INDENT_PX = 16
 const NOTE_INDENT_PX = 24
 const NOT_A_FOLDER = /not a directory/i
@@ -356,6 +357,22 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 	}
 
 	const download = (row: EntryRow): void => {
+		if (row.entry.kind === 'dir') {
+			void run(`Downloading the ${row.entry.name} folder…`, async () => {
+				const saved = await downloadFolder(serial, at(row.path))
+				const copied = `Saved ${saved.files} file(s) from ${row.entry.name}`
+				const skipped = saved.failed.length
+				return {
+					kind: 'saved',
+					text:
+						skipped === 0
+							? copied
+							: `${copied}; ${skipped} couldn't be read (${saved.failed.slice(0, 3).join(', ')}${skipped > 3 ? ', …' : ''})`,
+					localPath: saved.path,
+				}
+			})
+			return
+		}
 		void run(`Downloading ${row.entry.name}…`, async () => {
 			const localPath = await downloadFile(serial, at(row.path))
 			return { kind: 'saved', text: `Saved ${row.entry.name}`, localPath }
@@ -560,7 +577,15 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 					Upload…
 				</button>
 				<button
-					disabled={actionRow?.entry.kind !== 'file'}
+					disabled={
+						actionRow?.entry.kind !== 'file' &&
+						actionRow?.entry.kind !== 'dir'
+					}
+					title={
+						actionRow?.entry.kind === 'dir'
+							? 'Copy this folder and everything in it to Downloads\\tri-scrnz'
+							: 'Copy the selected file to Downloads\\tri-scrnz'
+					}
 					onClick={() => actionRow && download(actionRow)}
 				>
 					<Icon name='download' />
@@ -955,8 +980,9 @@ const StatusLine = ({ status }: StatusLineProps): JSX.Element => {
 		return (
 			<div className='explorer-status muted'>
 				Click the arrow next to a folder to open it in place.
-				Double-click a file to download it. Drop files here to upload
-				them into the folder shown above the list.
+				Double-click a file to download it, or select a folder and press
+				Download to copy all of it. Drop files here to upload them into
+				the folder shown above the list.
 			</div>
 		)
 	}
