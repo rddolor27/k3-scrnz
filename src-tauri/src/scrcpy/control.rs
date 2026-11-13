@@ -73,6 +73,7 @@ pub enum Control {
         text: String,
     },
     ResetVideo,
+    RotateDevice,
 }
 
 fn u16fp(f: f32) -> u16 {
@@ -196,6 +197,7 @@ pub fn serialize(m: &Control) -> Result<Vec<u8>, ControlError> {
             b.extend(s);
         }
         Control::ResetVideo => b.push(17),
+        Control::RotateDevice => b.push(11),
     }
     Ok(b)
 }
@@ -250,6 +252,7 @@ pub enum Input {
     },
     ExpandNotifications,
     CollapsePanels,
+    RotateDevice,
 }
 
 fn check_size(got: (u16, u16), session: (u16, u16)) -> Result<(), ControlError> {
@@ -362,6 +365,7 @@ pub fn to_controls(input: Input, session: (u16, u16)) -> Result<Vec<Control>, Co
         Input::ResetVideo { .. } => vec![Control::ResetVideo],
         Input::ExpandNotifications => vec![Control::ExpandNotifications],
         Input::CollapsePanels => vec![Control::CollapsePanels],
+        Input::RotateDevice => vec![Control::RotateDevice],
     })
 }
 

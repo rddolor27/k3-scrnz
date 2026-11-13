@@ -33,6 +33,7 @@ export type ControlMessage =
 	| { t: 'resetVideo'; force?: boolean }
 	| { t: 'expandNotifications' }
 	| { t: 'collapsePanels' }
+	| { t: 'rotateDevice' }
 
 export interface ControlSocket {
 	send: (message: ControlMessage) => void

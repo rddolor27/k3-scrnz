@@ -494,6 +494,9 @@ export const ScreenView = ({
 	const resetVideo = (): void => {
 		controlRef.current?.send({ t: 'resetVideo', force: true })
 	}
+	const rotateDevice = (): void => {
+		controlRef.current?.send({ t: 'rotateDevice' })
+	}
 	const revealPath = note?.revealPath ?? null
 	const captureButtons = (
 		<CaptureButtons
@@ -563,6 +566,12 @@ export const ScreenView = ({
 							icon='volumeUp'
 							label='Volume up'
 							onClick={() => press(KEY.VOLUME_UP)}
+						/>
+						<IconButton
+							icon='rotate'
+							label='Rotate device'
+							hint='Rotate the device between portrait and landscape (apps locked to one orientation stay put)'
+							onClick={rotateDevice}
 						/>
 					</span>
 					{captureButtons}
