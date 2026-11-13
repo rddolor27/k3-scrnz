@@ -22,7 +22,7 @@ import {
 } from '../lib/ipc'
 import { error } from '../lib/log'
 import { appDataRoot, formatSize, formatTime, joinPath } from '../lib/paths'
-import { type FolderState, useFileTree } from '../state/files'
+import { type FolderState, runAsFor, useFileTree } from '../state/files'
 import { Icon, type IconName } from './Icon'
 import { IconButton } from './IconButton'
 
@@ -49,15 +49,24 @@ const PROTECTED = new Set([
 	'/data/local/tmp',
 ])
 const APP_DATA_ROOT = /^\/data\/(data|user\/\d+)\/[^/]+$/
+const APP_LIST = /^\/data\/(data|user\/\d+)$/
 const PERMISSION_DENIED = /permission denied/i
+const NOT_DEBUGGABLE = /not debuggable/i
 
 const deleteRefusal = (path: string): string | null => {
 	if (path.split('/').length - 1 < 2) {
 		return 'Top-level folders are never deleted'
 	}
 	if (PROTECTED.has(path)) return 'This storage folder is never deleted'
+	if (APP_LIST.test(path)) return "This folder holds every app's data"
 	if (APP_DATA_ROOT.test(path)) return "An app's data folder is never deleted"
 	return null
+}
+
+const friendlyError = (dir: string, error: string): string => {
+	if (!NOT_DEBUGGABLE.test(error)) return error
+	const app = runAsFor(dir, null) ?? 'this app'
+	return `Android only lets adb into debug builds, and ${app} isn't one. Android Studio can't open it either.`
 }
 
 interface DeniedHelp {
@@ -74,8 +83,8 @@ const deniedHelp = (dir: string): DeniedHelp => {
 	}
 	if (dir === '/data' || dir.startsWith('/data/')) {
 		return {
-			hint: "For an app's private files, use App data at the top (debug builds only).",
-			jump: '/data/local/tmp',
+			hint: 'Your apps’ private files are under /data/data (debug builds only).',
+			jump: '/data/data',
 		}
 	}
 	return {
@@ -154,13 +163,23 @@ const flatten = (
 			})
 			return
 		}
+		if (folder.hint !== null) {
+			rows.push({
+				type: 'note',
+				key: `${dir}#hint`,
+				dir,
+				depth,
+				text: folder.hint,
+				error: false,
+			})
+		}
 		if (folder.error !== null && !pointsToFile(folder)) {
 			rows.push({
 				type: 'note',
 				key: `${dir}#error`,
 				dir,
 				depth,
-				text: folder.error,
+				text: friendlyError(dir, folder.error),
 				error: true,
 			})
 		}
@@ -224,7 +243,11 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 			? selectedRow.path
 			: selectedRow.parent
 		: root.path
-	const at = (path: string): FileLocation => ({ path, runAs: root.runAs })
+	const at = (path: string): FileLocation => ({
+		path,
+		runAs: runAsFor(path, root.runAs),
+	})
+	const targetRunAs = runAsFor(targetDir, root.runAs)
 
 	useEffect(() => {
 		dropTarget.current = { path: targetDir, runAs: root.runAs }
@@ -516,6 +539,14 @@ export const FileExplorer = ({ serial }: FileExplorerProps): JSX.Element => {
 					<Icon name='folderOpen' />
 					<code>{targetDir}</code>
 				</span>
+				{targetRunAs !== null && targetRunAs !== root.runAs && (
+					<span
+						className='badge wait'
+						title='Read and changed through run-as, like Android Studio does for debug builds'
+					>
+						run-as {targetRunAs}
+					</span>
+				)}
 				<span className='spacer' />
 				<button disabled={busy} onClick={startCreate}>
 					<Icon name='folderPlus' />
@@ -782,7 +813,7 @@ const TreeRow = ({
 		<td className='num'>
 			{row.entry.kind === 'file' ? formatSize(row.entry.size) : ''}
 		</td>
-		<td>{formatTime(row.entry.modified)}</td>
+		<td>{row.entry.modified > 0 ? formatTime(row.entry.modified) : ''}</td>
 		<td className='mode'>{row.entry.mode}</td>
 	</tr>
 )

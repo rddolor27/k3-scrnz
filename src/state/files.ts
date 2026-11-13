@@ -1,11 +1,17 @@
 import { useEffect, useState } from 'react'
 
-import { type FileEntry, type FileLocation, listDir } from '../lib/ipc'
+import {
+	type FileEntry,
+	type FileLocation,
+	listDir,
+	listPackages,
+} from '../lib/ipc'
 
 export interface FolderState {
 	entries: FileEntry[] | null
 	loading: boolean
 	error: string | null
+	hint: string | null
 }
 
 interface TreeState {
@@ -25,21 +31,78 @@ export interface FileTree {
 	refresh: () => void
 }
 
-const LOADING: FolderState = { entries: null, loading: true, error: null }
+const LOADING: FolderState = {
+	entries: null,
+	loading: true,
+	error: null,
+	hint: null,
+}
+const APP_DATA = /^\/data\/(?:data|user\/\d+)\/([^/]+)/
+const APP_LIST = /^\/data\/(?:data|user\/\d+)$/
+const PERMISSION_DENIED = /permission denied/i
+
+export const runAsFor = (
+	path: string,
+	rootRunAs: string | null,
+): string | null => APP_DATA.exec(path)?.[1] ?? rootRunAs
+
+const virtualFolder = (name: string): FileEntry => ({
+	name,
+	kind: 'dir',
+	size: 0,
+	modified: 0,
+	mode: '',
+})
+
+// The shell user can pass through /data and /data/data but can't list them.
+const reachableChildren = async (
+	serial: string,
+	path: string,
+): Promise<FolderState | null> => {
+	if (path === '/data') {
+		return {
+			entries: ['data', 'local'].map(virtualFolder),
+			loading: false,
+			error: null,
+			hint: 'Android hides this folder from adb; these are the parts adb can reach.',
+		}
+	}
+	if (APP_LIST.test(path)) {
+		const packages = await listPackages(serial)
+		return {
+			entries: packages.map(virtualFolder),
+			loading: false,
+			error: null,
+			hint: "Apps you installed. Debug builds open here, as in Android Studio; Android keeps other apps' folders closed.",
+		}
+	}
+	return null
+}
 
 const fetchFolder = async (
 	serial: string,
-	at: FileLocation,
+	path: string,
+	rootRunAs: string | null,
 ): Promise<FolderState> => {
+	const runAs = runAsFor(path, rootRunAs)
 	try {
-		const listing = await listDir(serial, at)
+		const listing = await listDir(serial, { path, runAs })
+		if (
+			runAs === null &&
+			listing.error !== null &&
+			PERMISSION_DENIED.test(listing.error)
+		) {
+			const reachable = await reachableChildren(serial, path)
+			if (reachable) return reachable
+		}
 		return {
 			entries: listing.entries,
 			loading: false,
-			error: listing.error ?? null,
+			error: listing.error,
+			hint: null,
 		}
 	} catch (e) {
-		return { entries: null, loading: false, error: String(e) }
+		return { entries: null, loading: false, error: String(e), hint: null }
 	}
 }
 
@@ -67,7 +130,7 @@ export const useFileTree = (serial: string, root: FileLocation): FileTree => {
 
 	useEffect(() => {
 		let live = true
-		void fetchFolder(serial, root).then((folder) => {
+		void fetchFolder(serial, root.path, root.runAs).then((folder) => {
 			if (live) apply(key, root.path, folder)
 		})
 		return (): void => {
@@ -81,17 +144,19 @@ export const useFileTree = (serial: string, root: FileLocation): FileTree => {
 			if (prev.key !== key) return prev
 			const folders = new Map(prev.folders)
 			for (const path of paths) {
+				const known = folders.get(path)
 				folders.set(path, {
-					entries: folders.get(path)?.entries ?? null,
+					entries: known?.entries ?? null,
 					loading: true,
 					error: null,
+					hint: known?.hint ?? null,
 				})
 			}
 			return { ...prev, folders }
 		})
 		for (const path of paths) {
-			void fetchFolder(serial, { path, runAs: root.runAs }).then(
-				(folder) => apply(key, path, folder),
+			void fetchFolder(serial, path, root.runAs).then((folder) =>
+				apply(key, path, folder),
 			)
 		}
 	}
