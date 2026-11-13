@@ -335,8 +335,20 @@ const sendSnapshot = (): void => {
 		})
 }
 
+const isBlank = (): boolean => {
+	if (!canvas || !ctx || !drawn) return false
+	const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+	const pixels = new Uint32Array(data.buffer)
+	// Little-endian RGBA: alpha is the top byte. Black is every colour below 32.
+	return pixels.every((pixel) => (pixel & 0x00e0e0e0) === 0)
+}
+
 self.onmessage = (e: MessageEvent<WorkerRequest>): void => {
 	const request = e.data
+	if (request.type === 'blank') {
+		post({ type: 'blank', blank: isBlank() })
+		return
+	}
 	if (request.type === 'screenshot') {
 		void takeScreenshot(request.id)
 		return

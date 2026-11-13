@@ -75,7 +75,7 @@ export const ScreenView = ({
 	)
 	const [lag, setLag] = useState(0)
 	const [software, setSoftware] = useState(false)
-	const [idle, setIdle] = useState(false)
+	const [blank, setBlank] = useState(false)
 	const [attempt, setAttempt] = useState(0)
 	const [suspended, setSuspended] = useState(false)
 	const [stale, setStale] = useState(false)
@@ -262,8 +262,10 @@ export const ScreenView = ({
 				}
 				if (idleNow) {
 					idleNow = false
-					setIdle(false)
+					setBlank(false)
 				}
+			} else if (event.type === 'blank') {
+				if (idleNow) setBlank(event.blank)
 			} else if (event.type === 'decoder-error') {
 				void error(`video decoder (${serial}): ${event.message}`)
 			} else if (event.type === 'failed') {
@@ -290,10 +292,12 @@ export const ScreenView = ({
 			const isIdle =
 				lastFrameAt > 0 &&
 				performance.now() - lastFrameAt > IDLE_AFTER_MS
-			if (isIdle !== idleNow) {
-				idleNow = isIdle
-				setIdle(isIdle)
-			}
+			if (!isIdle || idleNow) return
+			idleNow = true
+			if (interactive) return
+			// A still screen sends no frames either; only a black one is empty.
+			const request: WorkerRequest = { type: 'blank' }
+			worker.postMessage(request)
 		}, 1000)
 		cleanups.push(() => window.clearInterval(idleTimer))
 
@@ -536,7 +540,7 @@ export const ScreenView = ({
 			workerRef.current = null
 			setSession(null)
 			setTapWorker(null)
-			setIdle(false)
+			setBlank(false)
 			worker.terminate()
 			canvas.remove()
 			cleanups.forEach((cleanup) => cleanup())
@@ -719,7 +723,7 @@ export const ScreenView = ({
 				)}
 				{phase.kind === 'streaming' &&
 					hasFrame &&
-					idle &&
+					blank &&
 					!interactive && (
 						<div className='screen-overlay faint'>No content</div>
 					)}

@@ -31,6 +31,10 @@ export interface WorkerSnapshotRequest {
 	type: 'snapshot'
 }
 
+export interface WorkerBlankRequest {
+	type: 'blank'
+}
+
 export type WorkerRequest =
 	| WorkerInit
 	| WorkerScreenshotRequest
@@ -38,6 +42,7 @@ export type WorkerRequest =
 	| WorkerUntapRequest
 	| WorkerVisibilityRequest
 	| WorkerSnapshotRequest
+	| WorkerBlankRequest
 
 export interface TapFrame {
 	bitmap: ImageBitmap
@@ -66,3 +71,4 @@ export type WorkerEvent =
 	| ({ type: 'screenshot'; id: number } & ScreenshotFrame)
 	| { type: 'screenshot'; id: number; error: string }
 	| { type: 'snapshot'; bitmap: ImageBitmap | null }
+	| { type: 'blank'; blank: boolean }
