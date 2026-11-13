@@ -91,7 +91,7 @@ export const App = (): JSX.Element => {
 		})
 	}
 
-	// Opened panes stay mounted (decoding pauses while hidden), so returning never shows a black canvas.
+	// Opened panes stay mounted and a hidden screen keeps its last frame, so returning never shows a black canvas.
 	const mounted = showGrid
 		? []
 		: devices.filter(

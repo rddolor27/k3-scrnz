@@ -30,6 +30,8 @@ import { IconButton } from './IconButton'
 
 const IDLE_AFTER_MS = 3000
 const RETRY_DELAYS_MS = [1000, 2000, 5000]
+// Every running server costs the device an encoder and ~80 MB of RAM.
+const SUSPEND_AFTER_MS = 30_000
 
 type Phase =
 	| { kind: 'starting' }
@@ -61,6 +63,7 @@ export const ScreenView = ({
 	const controlRef = useRef<ControlSocket | null>(null)
 	const workerRef = useRef<Worker | null>(null)
 	const retriesRef = useRef(0)
+	const staleRef = useRef<HTMLCanvasElement | null>(null)
 	const [tapWorker, setTapWorker] = useState<Worker | null>(null)
 	const [phase, setPhase] = useState<Phase>({ kind: 'starting' })
 	const [hasFrame, setHasFrame] = useState(false)
@@ -72,6 +75,8 @@ export const ScreenView = ({
 	const [software, setSoftware] = useState(false)
 	const [idle, setIdle] = useState(false)
 	const [attempt, setAttempt] = useState(0)
+	const [suspended, setSuspended] = useState(false)
+	const [stale, setStale] = useState(false)
 	const interactive = role === 'main'
 	const { note, showNote } = useNote()
 	const capture = useScreenCapture({
@@ -88,11 +93,47 @@ export const ScreenView = ({
 		showNote,
 	})
 	const canCapture =
-		session !== null && phase.kind === 'streaming' && hasFrame
+		session !== null && phase.kind === 'streaming' && hasFrame && !stale
+	const suspendable =
+		tapLabel === undefined && capture.recordingSince === null
+	const suspendableRef = useRef(suspendable)
+
+	useEffect(() => {
+		suspendableRef.current = suspendable
+	}, [suspendable])
 
 	useEffect(() => {
 		const host = hostRef.current
 		if (!host) return
+		const cleanups: (() => void)[] = []
+		// A hidden pane or tab has a 0×0 host; minimized windows set document.hidden.
+		const isShown = (): boolean =>
+			!document.hidden && host.clientWidth > 0 && host.clientHeight > 0
+		const watchVisibility = (report: () => void): void => {
+			const observer = new ResizeObserver(report)
+			observer.observe(host)
+			document.addEventListener('visibilitychange', report)
+			cleanups.push(() => {
+				observer.disconnect()
+				document.removeEventListener('visibilitychange', report)
+			})
+		}
+
+		if (suspended) {
+			let resumed = false
+			watchVisibility(() => {
+				if (resumed || !isShown()) return
+				resumed = true
+				void info(
+					`mirror ${serial}/${displayId}: shown again, resuming`,
+				)
+				retriesRef.current = 0
+				setPhase((p) => (p.kind === 'error' ? { kind: 'starting' } : p))
+				setSuspended(false)
+			})
+			return (): void => cleanups.forEach((cleanup) => cleanup())
+		}
+
 		let live = true
 		let sessionId: string | null = null
 		let lastSentClip: string | null = null
@@ -102,7 +143,6 @@ export const ScreenView = ({
 		let failed = false
 		let retryTimer = 0
 		const video = { width: 0, height: 0 }
-		const cleanups: (() => void)[] = []
 
 		// A fresh canvas per mount: transferControlToOffscreen works only once.
 		const canvas = document.createElement('canvas')
@@ -116,26 +156,62 @@ export const ScreenView = ({
 		)
 		workerRef.current = worker
 
-		// A hidden pane or tab has a 0×0 host; minimized windows set document.hidden.
-		let shown = true
+		const keepStale = (bitmap: ImageBitmap): void => {
+			const still = document.createElement('canvas')
+			still.className = 'screen-stale'
+			still.width = bitmap.width
+			still.height = bitmap.height
+			const renderer = still.getContext('bitmaprenderer')
+			if (!renderer) {
+				bitmap.close()
+				return
+			}
+			renderer.transferFromImageBitmap(bitmap)
+			staleRef.current?.remove()
+			host.prepend(still)
+			staleRef.current = still
+			setStale(true)
+		}
+		const dropStale = (): void => {
+			if (!staleRef.current) return
+			staleRef.current.remove()
+			staleRef.current = null
+			setStale(false)
+		}
+
+		let shown = isShown()
+		let suspendTimer = 0
+		const suspendLater = (): void => {
+			window.clearTimeout(suspendTimer)
+			suspendTimer = window.setTimeout(() => {
+				if (!live || shown) return
+				if (!suspendableRef.current) {
+					suspendLater()
+					return
+				}
+				const request: WorkerRequest = { type: 'snapshot' }
+				worker.postMessage(request)
+			}, SUSPEND_AFTER_MS)
+		}
 		const reportVisibility = (): void => {
-			const next =
-				!document.hidden &&
-				host.clientWidth > 0 &&
-				host.clientHeight > 0
+			const next = isShown()
 			if (next === shown) return
 			shown = next
 			const request: WorkerRequest = { type: 'visibility', visible: next }
 			worker.postMessage(request)
+			if (next) window.clearTimeout(suspendTimer)
+			else suspendLater()
 		}
-		const visibilityObserver = new ResizeObserver(reportVisibility)
-		visibilityObserver.observe(host)
-		document.addEventListener('visibilitychange', reportVisibility)
-		reportVisibility()
-		cleanups.push(() => {
-			visibilityObserver.disconnect()
-			document.removeEventListener('visibilitychange', reportVisibility)
-		})
+		if (!shown) {
+			const request: WorkerRequest = {
+				type: 'visibility',
+				visible: false,
+			}
+			worker.postMessage(request)
+			suspendLater()
+		}
+		watchVisibility(reportVisibility)
+		cleanups.push(() => window.clearTimeout(suspendTimer))
 
 		const send = (message: ControlMessage): void => {
 			controlRef.current?.send(message)
@@ -178,6 +254,7 @@ export const ScreenView = ({
 					framed = true
 					retriesRef.current = 0
 					setHasFrame(true)
+					dropStale()
 				}
 				if (idleNow) {
 					idleNow = false
@@ -189,6 +266,16 @@ export const ScreenView = ({
 				fail(event.message)
 			} else if (event.type === 'closed') {
 				fail('The video connection closed.')
+			} else if (event.type === 'snapshot') {
+				if (!live || shown) {
+					event.bitmap?.close()
+					return
+				}
+				if (event.bitmap) keepStale(event.bitmap)
+				void info(
+					`mirror ${serial}/${displayId}: hidden for ${SUSPEND_AFTER_MS / 1000} s, stopping until shown`,
+				)
+				setSuspended(true)
 			}
 		}
 		worker.onerror = (e: ErrorEvent): void => {
@@ -444,11 +531,12 @@ export const ScreenView = ({
 			workerRef.current = null
 			setSession(null)
 			setTapWorker(null)
+			setIdle(false)
 			worker.terminate()
 			canvas.remove()
 			cleanups.forEach((cleanup) => cleanup())
 		}
-	}, [serial, displayId, role, interactive, attempt, maxSize])
+	}, [serial, displayId, role, interactive, attempt, maxSize, suspended])
 
 	useEffect(() => {
 		if (tapLabel === undefined || !tapWorker) return
@@ -603,13 +691,16 @@ export const ScreenView = ({
 				</div>
 			)}
 			<div className='screen-host' ref={hostRef}>
-				{phase.kind === 'starting' && (
+				{phase.kind === 'starting' && !stale && (
 					<div className='screen-overlay'>Starting mirror…</div>
 				)}
-				{phase.kind === 'streaming' && !hasFrame && (
+				{phase.kind === 'streaming' && !hasFrame && !stale && (
 					<div className='screen-overlay faint'>
 						Waiting for video…
 					</div>
+				)}
+				{stale && phase.kind !== 'error' && (
+					<div className='screen-overlay faint'>Reconnecting…</div>
 				)}
 				{phase.kind === 'error' && (
 					<div className='screen-overlay err'>

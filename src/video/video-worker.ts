@@ -25,7 +25,7 @@ let needKey = true
 let prependNext = true
 let chunksIn = 0
 let framesOut = 0
-let lastFrameNotice = 0
+let lastFrameNotice = -Infinity
 let lastNeedKey = 0
 let errors = 0
 let failed = false
@@ -301,10 +301,27 @@ const takeScreenshot = async (id: number): Promise<void> => {
 	}
 }
 
+const sendSnapshot = (): void => {
+	if (!canvas || !drawn) {
+		post({ type: 'snapshot', bitmap: null })
+		return
+	}
+	createImageBitmap(canvas)
+		.then((bitmap) => post({ type: 'snapshot', bitmap }, [bitmap]))
+		.catch((e: unknown) => {
+			post({ type: 'notice', message: `snapshot failed: ${String(e)}` })
+			post({ type: 'snapshot', bitmap: null })
+		})
+}
+
 self.onmessage = (e: MessageEvent<WorkerRequest>): void => {
 	const request = e.data
 	if (request.type === 'screenshot') {
 		void takeScreenshot(request.id)
+		return
+	}
+	if (request.type === 'snapshot') {
+		sendSnapshot()
 		return
 	}
 	if (request.type === 'tap') {

@@ -26,12 +26,17 @@ export interface WorkerVisibilityRequest {
 	visible: boolean
 }
 
+export interface WorkerSnapshotRequest {
+	type: 'snapshot'
+}
+
 export type WorkerRequest =
 	| WorkerInit
 	| WorkerScreenshotRequest
 	| WorkerTapRequest
 	| WorkerUntapRequest
 	| WorkerVisibilityRequest
+	| WorkerSnapshotRequest
 
 export interface TapFrame {
 	bitmap: ImageBitmap
@@ -59,3 +64,4 @@ export type WorkerEvent =
 	| { type: 'failed'; message: string }
 	| ({ type: 'screenshot'; id: number } & ScreenshotFrame)
 	| { type: 'screenshot'; id: number; error: string }
+	| { type: 'snapshot'; bitmap: ImageBitmap | null }
