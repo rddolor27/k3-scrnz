@@ -117,6 +117,7 @@ pub fn run() {
             logcat::set_logcat_filter,
             logcat::clear_logcat,
             logcat::get_logcat_info,
+            logcat::set_app_package,
             stats::get_app_stats,
             emulator::list_avds,
             emulator::start_emulator,

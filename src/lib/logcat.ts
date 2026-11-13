@@ -25,7 +25,7 @@ export interface LogFilter {
 }
 
 export interface LogcatInfo {
-	appPackage: string
+	appPackage: string | null
 	appUid: number | null
 }
 
@@ -53,6 +53,7 @@ export const DEFAULT_LOG_FILTER: LogFilter = {
 }
 
 export const FOCUS_LOG_FILTER_EVENT = 'tri-focus-log-filter'
+export const APP_PACKAGE_EVENT = 'tri-app-package-changed'
 
 const LEVEL_BY_VALUE = new Map<number, LogLevel>(
 	LOG_LEVELS.map((level): [number, LogLevel] => [level.value, level]),
@@ -89,3 +90,10 @@ export const clearLogcat = (serial: string): Promise<void> =>
 
 export const getLogcatInfo = (serial: string): Promise<LogcatInfo> =>
 	invoke<LogcatInfo>('get_logcat_info', { serial })
+
+export const setAppPackage = async (
+	appPackage: string | null,
+): Promise<void> => {
+	await invoke<void>('set_app_package', { package: appPackage })
+	window.dispatchEvent(new Event(APP_PACKAGE_EVENT))
+}

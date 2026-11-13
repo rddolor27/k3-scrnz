@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { error, warn } from '../lib/log'
 import {
+	APP_PACKAGE_EVENT,
 	clearLogcat,
 	DEFAULT_LOG_FILTER,
 	getLogcatInfo,
@@ -167,6 +168,11 @@ export const useLogcat = (serial: string): LogcatState => {
 			)
 			if (reset && !uidKnown) refreshInfo()
 		})
+		const onPackageChanged = (): void => {
+			uidKnown = false
+			refreshInfo()
+		}
+		window.addEventListener(APP_PACKAGE_EVENT, onPackageChanged)
 
 		const begin = async (): Promise<void> => {
 			await startLogcat(serial, channel)
@@ -186,6 +192,7 @@ export const useLogcat = (serial: string): LogcatState => {
 		return (): void => {
 			live = false
 			bufferRef.current = null
+			window.removeEventListener(APP_PACKAGE_EVENT, onPackageChanged)
 		}
 	}, [serial, attempt])
 

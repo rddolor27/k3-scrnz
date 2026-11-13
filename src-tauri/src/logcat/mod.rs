@@ -13,10 +13,11 @@ use serde_json::{Map, Value};
 use tauri::State;
 use tauri::ipc::Channel;
 use thiserror::Error;
+use tokio::sync::Notify;
 use tokio::time::{MissedTickBehavior, interval, sleep, timeout};
 
 use crate::adb::{self, AdbError, AdbServer, DeviceSel, DeviceState, ShellEvent, shell_quote};
-use crate::config::ConfigStore;
+use crate::config::{ConfigError, ConfigStore};
 use crate::devices::DeviceHub;
 
 use binary::{Parser, Record};
@@ -51,12 +52,14 @@ pub enum LogcatError {
     Timeout,
     #[error(transparent)]
     Adb(#[from] AdbError),
+    #[error(transparent)]
+    Config(#[from] ConfigError),
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogcatInfo {
-    pub app_package: String,
+    pub app_package: Option<String>,
     pub app_uid: Option<u32>,
 }
 
@@ -96,7 +99,7 @@ impl LogcatState {
     fn start(&self, serial: &str, channel: Channel<Value>) -> Result<(), LogcatError> {
         let device = self.device(serial)?;
         if !device.started.swap(true, MemOrdering::AcqRel) {
-            tracing::info!(serial, package = %device.package, "logcat started");
+            tracing::info!(serial, package = ?device.package(), "logcat started");
             tauri::async_runtime::spawn(run_reader(Arc::clone(&device), Arc::clone(&self.hub)));
             tauri::async_runtime::spawn(run_delivery(Arc::clone(&device)));
             tauri::async_runtime::spawn(run_uid_refresh(
@@ -119,6 +122,21 @@ impl LogcatState {
         Ok(())
     }
 
+    async fn set_app_package(&self, package: Option<String>) -> Result<(), LogcatError> {
+        let package = package
+            .map(|package| package.trim().to_owned())
+            .filter(|package| !package.is_empty());
+        if let Some(bad) = package.as_deref().filter(|p| !is_valid_package(p)) {
+            return Err(LogcatError::InvalidPackage(bad.to_owned()));
+        }
+        self.config.set_app_package(package.clone()).await?;
+        for device in lock(&self.devices).values() {
+            device.set_package(package.clone());
+        }
+        tracing::info!(package = ?package, "app package set");
+        Ok(())
+    }
+
     fn info(&self, serial: &str) -> LogcatInfo {
         let app_uid = lock(&self.devices)
             .get(serial)
@@ -132,8 +150,8 @@ impl LogcatState {
 
 struct Device {
     serial: String,
-    package: String,
     started: AtomicBool,
+    package_changed: Notify,
     inner: Mutex<Inner>,
 }
 
@@ -143,21 +161,23 @@ struct Inner {
     channel: Option<Channel<Value>>,
     pending_reset: bool,
     cursor: u64,
+    package: Option<String>,
     app_uid: Option<u32>,
 }
 
 impl Device {
-    fn new(serial: &str, package: String, ring_size: usize) -> Self {
+    fn new(serial: &str, package: Option<String>, ring_size: usize) -> Self {
         Self {
             serial: serial.to_owned(),
-            package,
             started: AtomicBool::new(false),
+            package_changed: Notify::new(),
             inner: Mutex::new(Inner {
                 ring: Ring::new(ring_size),
                 matcher: Matcher::default(),
                 channel: None,
                 pending_reset: false,
                 cursor: 0,
+                package,
                 app_uid: None,
             }),
         }
@@ -165,6 +185,23 @@ impl Device {
 
     fn inner(&self) -> MutexGuard<'_, Inner> {
         lock(&self.inner)
+    }
+
+    fn package(&self) -> Option<String> {
+        self.inner().package.clone()
+    }
+
+    fn set_package(&self, package: Option<String>) {
+        {
+            let mut inner = self.inner();
+            if inner.package == package {
+                return;
+            }
+            inner.package = package;
+            inner.app_uid = None;
+            inner.pending_reset = true;
+        }
+        self.package_changed.notify_one();
     }
 
     fn attach(&self, channel: Channel<Value>) {
@@ -192,8 +229,12 @@ impl Device {
         inner.pending_reset = true;
     }
 
-    fn set_app_uid(&self, uid: Option<u32>) -> bool {
+    /// Ignored when the package changed while its uid was being looked up.
+    fn set_app_uid(&self, package: &str, uid: Option<u32>) -> bool {
         let mut inner = self.inner();
+        if inner.package.as_deref() != Some(package) {
+            return false;
+        }
         let changed = inner.app_uid != uid;
         if changed {
             inner.app_uid = uid;
@@ -213,12 +254,12 @@ impl Device {
     }
 
     fn next_batch(&self) -> Option<(Channel<Value>, Value)> {
-        self.inner().next_batch(&self.package)
+        self.inner().next_batch()
     }
 }
 
 impl Inner {
-    fn next_batch(&mut self, package: &str) -> Option<(Channel<Value>, Value)> {
+    fn next_batch(&mut self) -> Option<(Channel<Value>, Value)> {
         let channel = self.channel.clone()?;
         let end = self.ring.next_seq();
         let from = std::mem::replace(&mut self.cursor, end);
@@ -227,7 +268,7 @@ impl Inner {
             return None;
         }
         let app = App {
-            package,
+            package: self.package.as_deref().unwrap_or_default(),
             uid: self.app_uid,
         };
         let matcher = &self.matcher;
@@ -449,27 +490,33 @@ async fn run_uid_refresh(device: Arc<Device>, hub: Arc<DeviceHub>) {
     let server = AdbServer::default();
     let sel = DeviceSel::Serial(device.serial.clone());
     loop {
-        let wait = if is_online(&hub, serial) {
-            match lookup_uid(&server, &sel, &device.package).await {
+        let wait = match device.package() {
+            None => None,
+            Some(_) if !is_online(&hub, serial) => Some(RETRY),
+            Some(package) => match lookup_uid(&server, &sel, &package).await {
                 Ok(uid) => {
-                    if device.set_app_uid(uid) {
-                        tracing::info!(serial, package = %device.package, uid = ?uid, "app uid");
+                    if device.set_app_uid(&package, uid) {
+                        tracing::info!(serial, package, uid = ?uid, "app uid");
                     }
-                    UID_REFRESH
+                    Some(UID_REFRESH)
                 }
                 Err(e @ LogcatError::InvalidPackage(_)) => {
                     tracing::warn!(serial, "\"only my app\" is off: {e}");
-                    return;
+                    None
                 }
                 Err(e) => {
                     tracing::debug!(serial, "app uid lookup failed: {e}");
-                    UID_RETRY
+                    Some(UID_RETRY)
                 }
-            }
-        } else {
-            RETRY
+            },
         };
-        sleep(wait).await;
+        match wait {
+            Some(wait) => tokio::select! {
+                () = sleep(wait) => {}
+                () = device.package_changed.notified() => {}
+            },
+            None => device.package_changed.notified().await,
+        }
     }
 }
 
@@ -544,6 +591,17 @@ pub async fn set_logcat_filter(
 #[tauri::command]
 pub async fn clear_logcat(state: State<'_, LogcatState>, serial: String) -> Result<(), String> {
     state.clear(&serial).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_app_package(
+    state: State<'_, LogcatState>,
+    package: Option<String>,
+) -> Result<(), String> {
+    state
+        .set_app_package(package)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

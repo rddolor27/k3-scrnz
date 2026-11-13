@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 const MAX_NAME_LEN: usize = 40;
-const DEFAULT_APP_PACKAGE: &str = "pos.kulay.pos";
+const APP_PACKAGE_KEY: &str = "appPackage";
 const DEFAULT_LOG_RING_SIZE: usize = 50_000;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -54,15 +54,14 @@ impl ConfigStore {
     }
 
     /// Not validated here; whoever puts it in a shell command must.
-    pub fn app_package(&self) -> String {
+    pub fn app_package(&self) -> Option<String> {
         self.lock()
             .other
-            .get("appPackage")
+            .get(APP_PACKAGE_KEY)
             .and_then(serde_json::Value::as_str)
             .map(str::trim)
             .filter(|package| !package.is_empty())
-            .unwrap_or(DEFAULT_APP_PACKAGE)
-            .to_owned()
+            .map(str::to_owned)
     }
 
     pub fn log_ring_size(&self) -> usize {
@@ -101,20 +100,47 @@ impl ConfigStore {
             .map_err(|e| ConfigError::Task(e.to_string()))?
     }
 
-    /// Saves first, then updates memory; `write_lock` keeps concurrent saves in order.
+    pub async fn set_app_package(
+        self: &Arc<Self>,
+        package: Option<String>,
+    ) -> Result<(), ConfigError> {
+        let store = Arc::clone(self);
+        tauri::async_runtime::spawn_blocking(move || {
+            store.save_with(|config| match package {
+                Some(package) => {
+                    config
+                        .other
+                        .insert(APP_PACKAGE_KEY.to_owned(), package.into());
+                }
+                None => {
+                    config.other.remove(APP_PACKAGE_KEY);
+                }
+            })
+        })
+        .await
+        .map_err(|e| ConfigError::Task(e.to_string()))?
+    }
+
     fn set_name_blocking(&self, serial: &str, name: &str) -> Result<(), ConfigError> {
-        let path = self.path.as_deref().ok_or(ConfigError::NoAppData)?;
         let name: String = name.trim().chars().take(MAX_NAME_LEN).collect();
+        self.save_with(|config| {
+            if name.is_empty() {
+                config.names.remove(serial);
+            } else {
+                config.names.insert(serial.to_owned(), name);
+            }
+        })
+    }
+
+    /// Saves first, then updates memory; `write_lock` keeps concurrent saves in order.
+    fn save_with(&self, change: impl FnOnce(&mut Config)) -> Result<(), ConfigError> {
+        let path = self.path.as_deref().ok_or(ConfigError::NoAppData)?;
         let _saving = self
             .write_lock
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         let mut next = self.lock().clone();
-        if name.is_empty() {
-            next.names.remove(serial);
-        } else {
-            next.names.insert(serial.to_owned(), name);
-        }
+        change(&mut next);
         write_atomically(path, &next)?;
         *self.lock() = next;
         Ok(())

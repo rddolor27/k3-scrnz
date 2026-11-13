@@ -557,6 +557,48 @@ input {
 	border-top: 1px solid var(--border);
 }
 
+.app-picker {
+	width: 300px;
+}
+
+.app-picker-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 2px 4px 4px;
+	color: var(--muted);
+}
+
+.app-picker-filter {
+	width: 100%;
+	padding: 5px 8px;
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	background: var(--panel);
+	color: var(--text);
+}
+
+.app-picker-filter:focus {
+	border-color: var(--accent);
+	outline: none;
+}
+
+.app-picker-list {
+	display: grid;
+	gap: 1px;
+	max-height: 260px;
+	overflow-y: auto;
+	padding-top: 4px;
+}
+
+.app-picker-list > span {
+	padding: 5px 8px;
+}
+
+.app-picker-list button.current {
+	color: var(--accent);
+}
+
 .screen-toolbar,
 .screen-label {
 	display: flex;

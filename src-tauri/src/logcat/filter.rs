@@ -73,6 +73,7 @@ fn is_app_line(entry: &LogEntry, app: &App<'_>) -> bool {
     app.uid == Some(entry.uid)
         || (entry.uid == SYSTEM_UID
             && entry.level >= MIN_PROBLEM_LEVEL
+            && !app.package.is_empty()
             && entry.msg.contains(app.package))
 }
 

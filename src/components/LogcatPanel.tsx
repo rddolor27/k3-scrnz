@@ -176,13 +176,16 @@ export const LogcatPanel = ({ serial }: LogcatPanelProps): JSX.Element => {
 				<label
 					className='logcat-check'
 					title={
-						notFound
-							? `${appName ?? 'The app'} wasn't found on this device`
-							: undefined
+						!appName
+							? 'Choose your app in App ▾ first'
+							: notFound
+								? `${appName} wasn't found on this device`
+								: undefined
 					}
 				>
 					<input
 						type='checkbox'
+						disabled={!appName}
 						checked={draft.onlyApp}
 						onChange={(e) =>
 							edit({ ...draft, onlyApp: e.target.checked }, false)
