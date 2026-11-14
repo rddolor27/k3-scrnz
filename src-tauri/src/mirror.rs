@@ -25,6 +25,7 @@ use crate::scrcpy::video::{self, Packet};
 const FIRST_SESSION_TIMEOUT: Duration = Duration::from_secs(10);
 const START_TIMEOUT: Duration = Duration::from_secs(20);
 const BOOT_TIMEOUT: Duration = Duration::from_secs(180);
+const START_TURN_POLL: Duration = Duration::from_millis(250);
 const VIEWER_QUEUE: usize = 16;
 const CONTROL_QUEUE: usize = 256;
 const RESET_EVERY: Duration = Duration::from_secs(1);
@@ -374,8 +375,9 @@ impl MirrorHub {
         }
     }
 
-    /// One server per screen: a second concurrent start is refused (two
-    /// `power_on` servers could press POWER twice).
+    /// One server start per screen at a time (two `power_on` servers could
+    /// press POWER twice). A second start waits its turn and then replaces the
+    /// first: a pane remounted while an emulator boots must not give up.
     async fn start(
         self: &Arc<Self>,
         serial: String,
@@ -385,10 +387,14 @@ impl MirrorHub {
     ) -> Result<Started, ScrcpyError> {
         valid_serial(&serial).map_err(ScrcpyError::Start)?;
         let key = (serial.clone(), display_id, role);
-        if !lock(&self.starting).insert(key.clone()) {
-            return Err(ScrcpyError::Start(
-                "a session for this screen is already starting".into(),
-            ));
+        let give_up = tokio::time::Instant::now() + BOOT_TIMEOUT + START_TIMEOUT;
+        while !lock(&self.starting).insert(key.clone()) {
+            if tokio::time::Instant::now() >= give_up {
+                return Err(ScrcpyError::Start(
+                    "a session for this screen is already starting".into(),
+                ));
+            }
+            tokio::time::sleep(START_TURN_POLL).await;
         }
         let _starting = Starting {
             set: &self.starting,
