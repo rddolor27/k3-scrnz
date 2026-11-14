@@ -1,12 +1,19 @@
-import type { DeviceView } from './ipc'
+import { type DeviceView, isEmulator } from './ipc'
 
 export type Tone = 'ok' | 'wait' | 'bad' | 'idle'
 
-type StateFields = Pick<DeviceView, 'state' | 'gone'>
+type StateFields = Pick<DeviceView, 'serial' | 'state' | 'gone'>
 
-export const stateTone = ({ state, gone }: StateFields): Tone => {
-	if (gone) return 'idle'
-	switch (state) {
+export const isStartingEmulator = ({
+	serial,
+	state,
+	gone,
+}: StateFields): boolean => !gone && state === 'offline' && isEmulator(serial)
+
+export const stateTone = (device: StateFields): Tone => {
+	if (device.gone) return 'idle'
+	if (isStartingEmulator(device)) return 'wait'
+	switch (device.state) {
 		case 'device':
 			return 'ok'
 		case 'authorizing':
@@ -21,16 +28,20 @@ export const stateTone = ({ state, gone }: StateFields): Tone => {
 	}
 }
 
-export const stateLabel = ({ state, gone }: StateFields): string | null => {
-	if (gone) return 'disconnected'
-	return state === 'device' ? null : state
+export const stateLabel = (device: StateFields): string | null => {
+	if (device.gone) return 'disconnected'
+	if (isStartingEmulator(device)) return 'starting'
+	return device.state === 'device' ? null : device.state
 }
 
-export const stateHint = ({ state, gone }: StateFields): string | null => {
-	if (gone) {
+export const stateHint = (device: StateFields): string | null => {
+	if (device.gone) {
 		return 'Disconnected. This tab closes shortly unless the device comes back.'
 	}
-	switch (state) {
+	if (isStartingEmulator(device)) {
+		return 'The emulator is starting. Its screen appears once Android has booted, usually within a minute; the first boot of a new emulator takes longer.'
+	}
+	switch (device.state) {
 		case 'device':
 			return null
 		case 'unauthorized':
@@ -43,6 +54,6 @@ export const stateHint = ({ state, gone }: StateFields): string | null => {
 		case 'no-permissions':
 			return 'adb has no permission to talk to this device.'
 		default:
-			return `The device is in ${state} mode.`
+			return `The device is in ${device.state} mode.`
 	}
 }

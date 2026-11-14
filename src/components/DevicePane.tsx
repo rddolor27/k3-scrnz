@@ -1,6 +1,11 @@
 import { type JSX, lazy, Suspense, useRef, useState } from 'react'
 
-import { stateHint, stateTone } from '../lib/device-state'
+import {
+	isStartingEmulator,
+	stateHint,
+	stateLabel,
+	stateTone,
+} from '../lib/device-state'
 import { type DeviceView, isEmulator, stopEmulator } from '../lib/ipc'
 import { warn } from '../lib/log'
 import { AppMenu } from './AppMenu'
@@ -49,6 +54,7 @@ export const DevicePane = ({ device }: DevicePaneProps): JSX.Element => {
 	const tone = stateTone(device)
 	const hint = stateHint(device)
 	const online = device.state === 'device' && !device.gone
+	const booting = isStartingEmulator(device)
 
 	return (
 		<section className='pane pane-wide'>
@@ -56,7 +62,7 @@ export const DevicePane = ({ device }: DevicePaneProps): JSX.Element => {
 				<h1>{device.name}</h1>
 				<span className='tab-serial'>{device.serial}</span>
 				<span className={`badge ${tone}`}>
-					{device.gone ? 'disconnected' : device.state}
+					{stateLabel(device) ?? device.state}
 				</span>
 				{isEmulator(device.serial) && online && (
 					<StopEmulator serial={device.serial} />
@@ -89,7 +95,9 @@ export const DevicePane = ({ device }: DevicePaneProps): JSX.Element => {
 			)}
 			{view === 'screen' && !online && (
 				<p className='muted'>
-					The mirror starts when the device is connected.
+					{booting
+						? 'The screen appears once the emulator has booted.'
+						: 'The mirror starts when the device is connected.'}
 				</p>
 			)}
 			{view === 'files' &&
@@ -97,7 +105,9 @@ export const DevicePane = ({ device }: DevicePaneProps): JSX.Element => {
 					<FileExplorer serial={device.serial} />
 				) : (
 					<p className='muted'>
-						Files are available while the device is connected.
+						{booting
+							? 'Files are available once the emulator has booted.'
+							: 'Files are available while the device is connected.'}
 					</p>
 				))}
 			{view === 'info' && <Overview device={device} />}
