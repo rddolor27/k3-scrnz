@@ -94,6 +94,7 @@ pub struct Session {
     control_tx: mpsc::Sender<Vec<u8>>,
     viewer: Mutex<Option<mpsc::Sender<Bytes>>>,
     need_key: AtomicBool,
+    got_frame: AtomicBool,
     last_reset: Mutex<Option<Instant>>,
     clients: AtomicUsize,
     unwatched_since: Mutex<Option<Instant>>,
@@ -136,6 +137,15 @@ impl Session {
             u64::from(video::CODEC_H264),
             &[],
         ));
+        // A viewer that attaches after the session or config packet still needs both.
+        let (width, height) = self.size();
+        if width > 0 && height > 0 {
+            let value = (u64::from(width) << 32) | u64::from(height);
+            let _ = tx.try_send(video::envelope(video::K_SESSION, 0, value, &[]));
+        }
+        if let Some(config) = lock(&self.config).clone() {
+            let _ = tx.try_send(video::envelope(video::K_CONFIG, 0, 0, &config));
+        }
         *lock(&self.viewer) = Some(tx);
         self.need_key.store(true, Ordering::SeqCst);
         self.request_reset(true);
@@ -143,6 +153,12 @@ impl Session {
     }
 
     pub fn request_reset(&self, force: bool) {
+        // scrcpy can hang for good when RESET_VIDEO arrives before the encoder's first frame
+        // (seen on the Android 7 emulator's software encoder); that first frame is a key frame anyway.
+        if !self.got_frame.load(Ordering::SeqCst) {
+            tracing::debug!(session = %self.id, "reset skipped before the first frame");
+            return;
+        }
         {
             let mut last = lock(&self.last_reset);
             if !force && last.is_some_and(|t| t.elapsed() < RESET_EVERY) {
@@ -488,6 +504,7 @@ impl MirrorHub {
             control_tx,
             viewer: Mutex::new(None),
             need_key: AtomicBool::new(true),
+            got_frame: AtomicBool::new(false),
             last_reset: Mutex::new(None),
             clients: AtomicUsize::new(0),
             unwatched_since: Mutex::new(Some(Instant::now())),
@@ -644,6 +661,9 @@ async fn video_loop(
                     .await;
             }
             Packet::Media { key, pts, data, .. } => {
+                if !session.got_frame.swap(true, Ordering::SeqCst) {
+                    tracing::debug!(session = %session.id, key, "first video frame");
+                }
                 session.record(Msg::Frame {
                     key,
                     pts,
