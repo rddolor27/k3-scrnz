@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { listSystemImages, type SystemImage } from '../lib/ipc'
 import { warn } from '../lib/log'
@@ -30,10 +30,10 @@ export const useSystemImages = (): {
 		}
 	}, [attempt])
 
-	const reload = (): void => {
+	const reload = useCallback((): void => {
 		setLoad({ kind: 'loading' })
 		setAttempt((n) => n + 1)
-	}
+	}, [])
 
 	return { load, reload }
 }

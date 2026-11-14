@@ -32,20 +32,26 @@ import {
 } from '../lib/avd'
 import { type Avd, createAvd } from '../lib/ipc'
 import { warn } from '../lib/log'
-import { useSystemImages } from '../state/system-images'
+import type { ImagesLoad } from '../state/system-images'
+import { Icon } from './Icon'
 
 interface CreateAvdFormProps {
 	existingNames: readonly string[]
+	imagesLoad: ImagesLoad
+	onReloadImages: () => void
+	onDownloadImages: () => void
 	onCancel: () => void
 	onCreated: (avd: Avd, startAfter: boolean) => void
 }
 
 export const CreateAvdForm = ({
 	existingNames,
+	imagesLoad: load,
+	onReloadImages,
+	onDownloadImages,
 	onCancel,
 	onCreated,
 }: CreateAvdFormProps): JSX.Element => {
-	const { load, reload } = useSystemImages()
 	const [profileId, setProfileId] = useState(DEFAULT_PROFILE.id)
 	const [typedName, setTypedName] = useState<string | null>(null)
 	const [imageId, setImageId] = useState<string | null>(null)
@@ -133,7 +139,13 @@ export const CreateAvdForm = ({
 	}
 
 	if (load.kind === 'ready' && load.images.length === 0) {
-		return <NoSystemImages onRetry={reload} onBack={onCancel} />
+		return (
+			<NoSystemImages
+				onRetry={onReloadImages}
+				onDownload={onDownloadImages}
+				onBack={onCancel}
+			/>
+		)
 	}
 
 	const canCreate =
@@ -193,18 +205,29 @@ export const CreateAvdForm = ({
 			<Field
 				label='System image'
 				note={
-					load.kind === 'failed' ? (
-						<span className='avd-note err'>
-							{load.message}{' '}
+					<>
+						{load.kind === 'failed' && (
+							<span className='avd-note err'>
+								{load.message}{' '}
+								<button
+									type='button'
+									className='link'
+									onClick={onReloadImages}
+								>
+									Try again
+								</button>
+							</span>
+						)}
+						<span className='avd-note'>
 							<button
 								type='button'
 								className='link'
-								onClick={reload}
+								onClick={onDownloadImages}
 							>
-								Try again
+								Download more…
 							</button>
 						</span>
-					) : null
+					</>
 				}
 				control={(id) => (
 					<select
@@ -399,26 +422,31 @@ const Field = ({
 
 interface NoSystemImagesProps {
 	onRetry: () => void
+	onDownload: () => void
 	onBack: () => void
 }
 
 const NoSystemImages = ({
 	onRetry,
+	onDownload,
 	onBack,
 }: NoSystemImagesProps): JSX.Element => (
 	<div className='avd-empty'>
 		<strong>No system images are installed</strong>
 		<p className='muted'>
-			An emulator needs one. In Android Studio, open Tools → SDK Manager →
-			SDK Platforms, tick <em>Show package details</em>, and install a
-			system image. Then check again here.
+			An emulator needs one. Download one here, or install it with Android
+			Studio&apos;s SDK Manager and check again.
 		</p>
 		<div className='avd-form-actions'>
 			<button type='button' onClick={onBack}>
 				Back
 			</button>
-			<button type='button' className='primary' onClick={onRetry}>
+			<button type='button' onClick={onRetry}>
 				Check again
+			</button>
+			<button type='button' className='primary' onClick={onDownload}>
+				<Icon name='download' />
+				Download a system image
 			</button>
 		</div>
 	</div>

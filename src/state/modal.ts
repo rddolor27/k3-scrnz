@@ -26,7 +26,7 @@ export const useModal = (
 			if (e.key !== 'Tab' || !dialog) return
 			const items = Array.from(
 				dialog.querySelectorAll<HTMLElement>(FOCUSABLE),
-			)
+			).filter((item) => item.getClientRects().length > 0)
 			const first = items[0]
 			const last = items[items.length - 1]
 			if (!first || !last) return

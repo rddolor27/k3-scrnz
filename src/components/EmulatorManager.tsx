@@ -7,9 +7,12 @@ import { avdTitle } from '../lib/avd'
 import type { Avd } from '../lib/ipc'
 import { useAvdActions, useAvds } from '../state/avds'
 import { useModal } from '../state/modal'
+import { useSystemImageInstall } from '../state/system-image-install'
+import { useSystemImages } from '../state/system-images'
 import { AvdList } from './AvdList'
 import { CreateAvdForm } from './CreateAvdForm'
 import { Icon } from './Icon'
+import { SystemImages } from './SystemImages'
 
 interface EmulatorManagerProps {
 	onOpen: (serial: string) => void
@@ -41,7 +44,14 @@ export const EmulatorManager = ({
 	)
 }
 
-type View = 'list' | 'create'
+type View = 'list' | 'create' | 'images'
+type ImagesOrigin = 'list' | 'create'
+
+const TITLES: Record<View, string> = {
+	list: 'Emulators',
+	create: 'Create emulator',
+	images: 'System images',
+}
 
 interface EmulatorDialogProps {
 	onOpen: (serial: string) => void
@@ -53,8 +63,16 @@ const EmulatorDialog = ({
 	onClose,
 }: EmulatorDialogProps): JSX.Element => {
 	const [view, setView] = useState<View>('list')
+	const [origin, setOrigin] = useState<ImagesOrigin>('list')
+	const [imageChanges, setImageChanges] = useState(0)
 	const { avds, error, refresh } = useAvds()
 	const actions = useAvdActions({ avds, refresh, onOpen })
+	const { load: imagesLoad, reload: reloadImages } = useSystemImages()
+	const onImagesChanged = useCallback((): void => {
+		reloadImages()
+		setImageChanges((n) => n + 1)
+	}, [reloadImages])
+	const install = useSystemImageInstall(onImagesChanged)
 	const dialogRef = useRef<HTMLDivElement>(null)
 	const titleId = useId()
 	useModal(dialogRef, onClose)
@@ -65,6 +83,20 @@ const EmulatorDialog = ({
 		void refresh()
 		if (startAfter) void actions.start(avd)
 	}
+
+	const showImages = (): void => {
+		setOrigin(view === 'create' ? 'create' : 'list')
+		setView('images')
+	}
+
+	const goBack = (): void => setView(view === 'images' ? origin : 'list')
+
+	const backLabel =
+		view === 'images' && origin === 'create'
+			? 'Back to the new emulator'
+			: 'Back to the emulator list'
+	const keepForm =
+		view === 'create' || (view === 'images' && origin === 'create')
 
 	return (
 		<div
@@ -82,29 +114,37 @@ const EmulatorDialog = ({
 				ref={dialogRef}
 			>
 				<header className='emulator-head'>
-					{view === 'create' && (
+					{view !== 'list' && (
 						<button
 							type='button'
 							className='icon-button'
-							aria-label='Back to the emulator list'
-							title='Back to the emulator list'
-							onClick={() => setView('list')}
+							aria-label={backLabel}
+							title={backLabel}
+							onClick={goBack}
 						>
 							<Icon name='chevronLeft' />
 						</button>
 					)}
-					<h2 id={titleId}>
-						{view === 'list' ? 'Emulators' : 'Create emulator'}
-					</h2>
+					<h2 id={titleId}>{TITLES[view]}</h2>
 					{view === 'list' && (
-						<button
-							type='button'
-							className='primary'
-							onClick={() => setView('create')}
-						>
-							<Icon name='plus' />
-							Create emulator
-						</button>
+						<>
+							<button
+								type='button'
+								onClick={showImages}
+								title='Download, update and remove Android system images'
+							>
+								<Icon name='download' />
+								System images
+							</button>
+							<button
+								type='button'
+								className='primary'
+								onClick={() => setView('create')}
+							>
+								<Icon name='plus' />
+								Create emulator
+							</button>
+						</>
 					)}
 					<button
 						type='button'
@@ -117,13 +157,28 @@ const EmulatorDialog = ({
 					</button>
 				</header>
 				<div className='emulator-body'>
-					{view === 'create' ? (
-						<CreateAvdForm
-							existingNames={(avds ?? []).map((avd) => avd.name)}
-							onCancel={() => setView('list')}
-							onCreated={created}
+					{keepForm && (
+						<div hidden={view !== 'create'}>
+							<CreateAvdForm
+								existingNames={(avds ?? []).map(
+									(avd) => avd.name,
+								)}
+								imagesLoad={imagesLoad}
+								onReloadImages={reloadImages}
+								onDownloadImages={showImages}
+								onCancel={() => setView('list')}
+								onCreated={created}
+							/>
+						</div>
+					)}
+					{view === 'images' && (
+						<SystemImages
+							install={install}
+							changes={imageChanges}
+							onChanged={onImagesChanged}
 						/>
-					) : (
+					)}
+					{view === 'list' && (
 						<>
 							{actions.note && (
 								<p

@@ -99,6 +99,8 @@ export const HARDWARE_PROFILES: readonly HardwareProfile[] = [
 ]
 
 const ANDROID_VERSIONS: ReadonlyMap<number, string> = new Map([
+	[24, '7.0'],
+	[25, '7.1'],
 	[26, '8.0'],
 	[27, '8.1'],
 	[28, '9'],
@@ -110,6 +112,7 @@ const ANDROID_VERSIONS: ReadonlyMap<number, string> = new Map([
 	[34, '14'],
 	[35, '15'],
 	[36, '16'],
+	[37, '17'],
 ])
 
 const PHONE_IMAGE_TAGS = /^(default|google_apis|google_apis_playstore)$/
@@ -122,8 +125,20 @@ export const androidLabel = (apiLevel: number): string => {
 export const profileBaseName = ({ label }: HardwareProfile): string =>
 	label.replace(/″/g, '')
 
-export const imageLabel = (image: SystemImage): string =>
-	`${androidLabel(image.apiLevel)} · ${image.tagDisplay} · ${image.abi}`
+export const versionLabel = (
+	apiLevel: number,
+	apiMinor: number | null = null,
+): string =>
+	apiMinor
+		? `${androidLabel(apiLevel)} (API ${apiLevel}.${apiMinor})`
+		: androidLabel(apiLevel)
+
+export const imageLabel = (
+	image: Pick<SystemImage, 'apiLevel' | 'tagDisplay' | 'abi'> & {
+		apiMinor?: number | null
+	},
+): string =>
+	`${versionLabel(image.apiLevel, image.apiMinor)} · ${image.tagDisplay} · ${image.abi}`
 
 export const avdTitle = ({
 	name,

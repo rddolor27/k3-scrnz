@@ -357,3 +357,142 @@
 	justify-content: flex-end;
 	gap: 8px;
 }
+
+.images-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 16px;
+}
+
+.images-toolbar .images-kind {
+	width: auto;
+	min-width: 140px;
+}
+
+.emulator-dialog .images-refresh {
+	margin-left: auto;
+}
+
+.image-group {
+	display: grid;
+	gap: 6px;
+}
+
+.image-group-title {
+	margin: 4px 0 0;
+	color: var(--muted);
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.image-warn {
+	margin: 2px 0 0;
+	color: var(--wait);
+	font-size: 12px;
+}
+
+.image-warnings {
+	padding: 6px 10px;
+	border: 1px solid var(--wait);
+	border-radius: 6px;
+	color: var(--wait);
+	font-size: 12px;
+}
+
+.image-warnings ul {
+	margin: 4px 0 0;
+	padding-left: 18px;
+	overflow-wrap: anywhere;
+}
+
+.avd-row > .image-failure {
+	grid-column: 1 / -1;
+}
+
+.image-progress {
+	display: grid;
+	grid-column: 1 / -1;
+	gap: 6px;
+}
+
+.image-bar {
+	height: 6px;
+	border-radius: 3px;
+	background: var(--bg);
+	overflow: hidden;
+}
+
+.image-bar-fill {
+	height: 100%;
+	border-radius: 3px;
+	background: var(--accent);
+	transition: width 0.4s linear;
+}
+
+.image-bar.indeterminate .image-bar-fill {
+	width: 35%;
+	animation: image-bar-slide 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes image-bar-slide {
+	from {
+		transform: translateX(0);
+	}
+
+	to {
+		transform: translateX(185%);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.image-bar.indeterminate .image-bar-fill {
+		width: 100%;
+		opacity: 0.4;
+		animation: none;
+	}
+}
+
+.image-progress-line {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.image-progress-text {
+	min-width: 0;
+	color: var(--muted);
+	font-variant-numeric: tabular-nums;
+	overflow-wrap: anywhere;
+}
+
+.license {
+	display: grid;
+	gap: 10px;
+}
+
+.license h3 {
+	margin: 0;
+	font-size: 14px;
+}
+
+.license-text {
+	max-height: min(380px, calc(100vh - 320px));
+	margin: 0;
+	padding: 10px 12px;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--bg);
+	font: inherit;
+	font-size: 12px;
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+	overflow-y: auto;
+	white-space: pre-wrap;
+}
+
+.license-text:focus-visible {
+	border-color: var(--accent);
+	outline: none;
+}

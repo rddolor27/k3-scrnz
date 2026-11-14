@@ -133,6 +133,79 @@ export const startEmulator = (
 export const stopEmulator = (serial: string): Promise<void> =>
 	invoke<void>('stop_emulator', { serial })
 
+export interface RemoteImage {
+	id: string
+	apiLevel: number
+	apiMinor: number | null
+	extensionLevel: number | null
+	tag: string
+	tagDisplay: string
+	abi: string
+	playStore: boolean
+	revision: string
+	displayName: string
+	sizeBytes: number
+	licenseId: string
+	minEmulator: string | null
+	emulatorTooOld: boolean
+	installed: boolean
+	installedRevision: string | null
+	updateAvailable: boolean
+}
+
+export interface License {
+	id: string
+	text: string
+	accepted: boolean
+}
+
+export interface RemoteCatalog {
+	images: RemoteImage[]
+	licenses: License[]
+	errors: string[]
+}
+
+export type InstallPhase =
+	| 'downloading'
+	| 'verifying'
+	| 'extracting'
+	| 'installing'
+	| 'done'
+	| 'failed'
+	| 'cancelled'
+
+export interface InstallProgress {
+	id: string
+	phase: InstallPhase
+	received: number
+	total: number
+	error: string | null
+}
+
+export const listRemoteImages = (refresh: boolean): Promise<RemoteCatalog> =>
+	invoke<RemoteCatalog>('list_remote_images', { refresh })
+
+export const installSystemImage = (
+	id: string,
+	acceptLicense: boolean,
+): Promise<void> => invoke<void>('install_system_image', { id, acceptLicense })
+
+export const cancelSystemImageInstall = (): Promise<void> =>
+	invoke<void>('cancel_system_image_install')
+
+export const getSystemImageInstall = (): Promise<InstallProgress | null> =>
+	invoke<InstallProgress | null>('get_system_image_install')
+
+export const uninstallSystemImage = (id: string): Promise<void> =>
+	invoke<void>('uninstall_system_image', { id })
+
+export const onSystemImageProgress = (
+	handler: (progress: InstallProgress) => void,
+): Promise<UnlistenFn> =>
+	listen<InstallProgress>('system-image-progress', (event) =>
+		handler(event.payload),
+	)
+
 export const isEmulator = (serial: string): boolean =>
 	serial.startsWith('emulator-')
 
