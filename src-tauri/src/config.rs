@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -8,6 +8,7 @@ use thiserror::Error;
 
 const MAX_NAME_LEN: usize = 40;
 const APP_PACKAGE_KEY: &str = "appPackage";
+const ACCEPTED_LICENSES_KEY: &str = "acceptedLicenses";
 const DEFAULT_LOG_RING_SIZE: usize = 50_000;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -64,6 +65,17 @@ impl ConfigStore {
             .map(str::to_owned)
     }
 
+    pub fn accepted_licenses(&self) -> HashSet<String> {
+        self.lock()
+            .other
+            .get(ACCEPTED_LICENSES_KEY)
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|hash| hash.as_str().map(str::to_owned))
+            .collect()
+    }
+
     pub fn log_ring_size(&self) -> usize {
         self.lock()
             .other
@@ -114,6 +126,28 @@ impl ConfigStore {
                 }
                 None => {
                     config.other.remove(APP_PACKAGE_KEY);
+                }
+            })
+        })
+        .await
+        .map_err(|e| ConfigError::Task(e.to_string()))?
+    }
+
+    pub async fn accept_license(self: &Arc<Self>, hash: String) -> Result<(), ConfigError> {
+        let store = Arc::clone(self);
+        tauri::async_runtime::spawn_blocking(move || {
+            store.save_with(|config| {
+                let list = config
+                    .other
+                    .entry(ACCEPTED_LICENSES_KEY)
+                    .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+                if !list.is_array() {
+                    *list = serde_json::Value::Array(Vec::new());
+                }
+                if let Some(hashes) = list.as_array_mut()
+                    && !hashes.iter().any(|known| known.as_str() == Some(&hash))
+                {
+                    hashes.push(hash.into());
                 }
             })
         })

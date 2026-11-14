@@ -11,6 +11,7 @@ mod logcat;
 mod mirror;
 mod scrcpy;
 mod stats;
+mod sysimg;
 mod terminal;
 mod ws;
 
@@ -87,6 +88,7 @@ pub fn run() {
             app.manage(terminal::TerminalHub::default());
             app.manage(stats::StatsState::new());
             app.manage(emulator::EmulatorState::new(app.path().app_log_dir().ok()));
+            app.manage(sysimg::SysImgState::default());
             app.manage(Arc::clone(&config));
             app.manage(hub);
             Ok(())
@@ -133,6 +135,11 @@ pub fn run() {
             avd::list_system_images,
             avd::create_avd,
             avd::delete_avd,
+            sysimg::list_remote_images,
+            sysimg::install_system_image,
+            sysimg::cancel_system_image_install,
+            sysimg::get_system_image_install,
+            sysimg::uninstall_system_image,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

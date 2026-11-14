@@ -125,9 +125,9 @@ pub struct AvdSpec {
     pub customer_display: Option<DisplaySize>,
 }
 
-struct Found {
-    image: SystemImage,
-    folders: [String; 3],
+pub struct Found {
+    pub image: SystemImage,
+    pub folders: [String; 3],
 }
 
 #[derive(Default)]
@@ -176,7 +176,7 @@ fn avd_home() -> Option<PathBuf> {
         })
 }
 
-fn sdk_root() -> Option<PathBuf> {
+pub fn sdk_root() -> Option<PathBuf> {
     crate::adb::sdk_roots().find(|root| root.join("system-images").is_dir())
 }
 
@@ -190,7 +190,7 @@ fn parse_ini(text: &str) -> Ini {
         .collect()
 }
 
-fn read_ini(path: &Path) -> Option<Ini> {
+pub fn read_ini(path: &Path) -> Option<Ini> {
     let mut bytes = Vec::new();
     let read =
         std::fs::File::open(path).and_then(|file| file.take(MAX_INI_BYTES).read_to_end(&mut bytes));
@@ -389,7 +389,7 @@ fn subfolders(path: &Path) -> Vec<String> {
         .collect()
 }
 
-fn scan_images(root: &Path) -> Vec<Found> {
+pub fn scan_images(root: &Path) -> Vec<Found> {
     let base = root.join("system-images");
     let mut found = Vec::new();
     for platform in subfolders(&base) {
@@ -399,8 +399,10 @@ fn scan_images(root: &Path) -> Vec<Found> {
                 let Some(props) = read_ini(&dir.join("source.properties")) else {
                     continue;
                 };
-                let Some(api_level) =
-                    number(&props, "AndroidVersion.ApiLevel").or_else(|| api_of(&platform))
+                let Some(api_level) = props
+                    .get("AndroidVersion.ApiLevel")
+                    .and_then(|level| level.split('.').next()?.parse().ok())
+                    .or_else(|| api_of(&platform))
                 else {
                     continue;
                 };
@@ -445,6 +447,36 @@ pub async fn list_system_images() -> Result<Vec<SystemImage>, AvdError> {
             .unwrap_or_default()
     })
     .await
+}
+
+fn uses_sysdir(sysdir: &str, folders: &[String; 3]) -> bool {
+    let parts: Vec<&str> = sysdir
+        .split(['/', '\\'])
+        .filter(|part| !part.is_empty())
+        .collect();
+    let [.., base, platform, tag, abi] = parts.as_slice() else {
+        return false;
+    };
+    base.eq_ignore_ascii_case("system-images")
+        && platform.eq_ignore_ascii_case(&folders[0])
+        && tag.eq_ignore_ascii_case(&folders[1])
+        && abi.eq_ignore_ascii_case(&folders[2])
+}
+
+pub fn avds_using_image(folders: &[String; 3]) -> Vec<String> {
+    let Some(home) = avd_home() else {
+        return Vec::new();
+    };
+    names_in(&home)
+        .into_iter()
+        .filter(|name| {
+            let pointer = read_ini(&home.join(format!("{name}.ini"))).unwrap_or_default();
+            avd_folder(Some(&home), name, &pointer)
+                .and_then(|folder| read_ini(&folder.join("config.ini")))
+                .and_then(|config| config.get("image.sysdir.1").cloned())
+                .is_some_and(|sysdir| uses_sysdir(&sysdir, folders))
+        })
+        .collect()
 }
 
 fn in_range(field: &'static str, value: u32, range: &RangeInclusive<u32>) -> Result<(), AvdError> {
