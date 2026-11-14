@@ -1,9 +1,8 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/lockup-on-dark.svg">
-  <img alt="tri.scrnz" src="assets/brand/lockup-on-light.svg" width="360">
-</picture>
+<p align="center">
+  <img alt="tri.scrnz logo" src="assets/brand/icon.svg" width="200">
+</p>
 
-# tri.scrnz
+<h1 align="center">tri.scrnz</h1>
 
 A lightweight Windows desktop app for testing Android devices over USB. It gives you one tab per device, with a clickable live mirror of the main screen, the customer screen when one is detected, and a filtered logcat panel.
 
@@ -19,7 +18,7 @@ Built with Tauri 2 (Rust and React/TypeScript). It talks to the adb server that 
 - **Files.** A tree of the device's files with upload, download, new folder and delete, including app data of debuggable apps.
 - **Apps.** Drop an `.apk` on a screen to install it; restart, force-stop or clear the data of the selected app.
 - **Terminal.** A device shell, or a terminal in a project folder that already targets the device (`ANDROID_SERIAL` is set and the SDK's adb comes first on `PATH`). Choose PowerShell, Git Bash or Command Prompt. React Native and Expo projects start building right away.
-- **Emulators.** Start and stop your Android Virtual Devices from the top bar.
+- **Emulators.** Create emulators from your installed system images (phone, tablet and POS terminal profiles or a custom screen, optionally with a customer screen as a second display), then quick boot, cold boot, wipe, stop or delete them. Emulators run without a window and open as tabs like devices.
 
 ## Install
 
