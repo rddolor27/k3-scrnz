@@ -463,18 +463,23 @@ fn uses_sysdir(sysdir: &str, folders: &[String; 3]) -> bool {
         && abi.eq_ignore_ascii_case(&folders[2])
 }
 
+/// Labels as the emulator list shows them: display name, else the AVD name with spaces.
 pub fn avds_using_image(folders: &[String; 3]) -> Vec<String> {
     let Some(home) = avd_home() else {
         return Vec::new();
     };
     names_in(&home)
         .into_iter()
-        .filter(|name| {
+        .filter_map(|name| {
             let pointer = read_ini(&home.join(format!("{name}.ini"))).unwrap_or_default();
-            avd_folder(Some(&home), name, &pointer)
-                .and_then(|folder| read_ini(&folder.join("config.ini")))
-                .and_then(|config| config.get("image.sysdir.1").cloned())
-                .is_some_and(|sysdir| uses_sysdir(&sysdir, folders))
+            let config = avd_folder(Some(&home), &name, &pointer)
+                .and_then(|folder| read_ini(&folder.join("config.ini")))?;
+            let used = config
+                .get("image.sysdir.1")
+                .is_some_and(|sysdir| uses_sysdir(sysdir, folders));
+            used.then(|| {
+                text(&config, "avd.ini.displayname").unwrap_or_else(|| name.replace('_', " "))
+            })
         })
         .collect()
 }

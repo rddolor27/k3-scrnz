@@ -436,11 +436,22 @@ pub fn uninstall(id: &str) -> Result<(), SysImgError> {
         .find(|found| found.image.id.eq_ignore_ascii_case(id))
         .ok_or_else(|| SysImgError::NotInstalled(id.to_owned()))?;
     let users = avd::avds_using_image(&found.folders);
-    if !users.is_empty() {
-        return Err(SysImgError::InUse {
-            id: found.image.id,
-            avds: users.join(", "),
-        });
+    match users.as_slice() {
+        [] => {}
+        [one] => {
+            return Err(SysImgError::InUse(format!(
+                "The emulator \"{one}\" uses this image. Delete that emulator first, then uninstall."
+            )));
+        }
+        many => {
+            return Err(SysImgError::InUse(format!(
+                "The emulators {} use this image. Delete them first, then uninstall.",
+                many.iter()
+                    .map(|name| format!("\"{name}\""))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )));
+        }
     }
     let base = root.join("system-images");
     let [platform, tag, abi] = &found.folders;

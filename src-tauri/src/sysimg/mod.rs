@@ -59,8 +59,8 @@ pub enum SysImgError {
     Archive(String),
     #[error("{0} is not installed")]
     NotInstalled(String),
-    #[error("{id} is used by {avds}; delete {avds} first")]
-    InUse { id: String, avds: String },
+    #[error("{0}")]
+    InUse(String),
     #[error("refusing to delete {0}: not a plain folder inside the SDK's system-images")]
     Unsafe(String),
     #[error("can't replace the installed image ({0}); is an emulator using it?")]
