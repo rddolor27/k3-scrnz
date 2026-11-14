@@ -391,12 +391,14 @@ async fn run_reader(device: Arc<Device>, hub: Arc<DeviceHub>) {
     let mut resume = Resume::default();
     let mut waiting = false;
     let mut repeating = false;
+    let mut idle_runs: u32 = 0;
     loop {
         if !is_online(&hub, serial) {
             if !waiting {
                 tracing::info!(serial, "device offline; logcat waits for it");
                 waiting = true;
             }
+            idle_runs = 0;
             sleep(RETRY).await;
             continue;
         }
@@ -406,6 +408,9 @@ async fn run_reader(device: Arc<Device>, hub: Arc<DeviceHub>) {
         let result = stream(&device, &server, &sel, &mut resume).await;
         if resume.accepted != accepted {
             repeating = false;
+            idle_runs = 0;
+        } else {
+            idle_runs = idle_runs.saturating_add(1);
         }
         match result {
             Ok(()) if repeating => tracing::debug!(serial, "logcat stream ended again"),
@@ -419,7 +424,18 @@ async fn run_reader(device: Arc<Device>, hub: Arc<DeviceHub>) {
                 repeating = true;
             }
         }
-        sleep(RETRY).await;
+        sleep(retry_delay(idle_runs)).await;
+    }
+}
+
+// A logcat that fails on every start without a single line must not restart every second.
+fn retry_delay(idle_runs: u32) -> Duration {
+    match idle_runs {
+        0 | 1 => RETRY,
+        2 => Duration::from_secs(2),
+        3 => Duration::from_secs(5),
+        4 => Duration::from_secs(10),
+        _ => Duration::from_secs(30),
     }
 }
 
