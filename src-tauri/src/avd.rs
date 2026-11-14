@@ -281,7 +281,11 @@ fn read_avd(home: Option<&Path>, name: &str) -> Avd {
                     .and_then(|dir| dir.split(['/', '\\']).find_map(api_of))
             }),
         tag: text(&config, "tag.id"),
-        tag_display: text(&config, "tag.display"),
+        tag_display: match (text(&config, "tag.display"), text(&config, "tag.id")) {
+            (Some(display), Some(tag)) if display == tag => Some(known_tag_display(&tag)),
+            (None, Some(tag)) => Some(known_tag_display(&tag)),
+            (display, _) => display,
+        },
         abi: text(&config, "abi.type"),
         width: number(&config, "hw.lcd.width"),
         height: number(&config, "hw.lcd.height"),
@@ -354,6 +358,19 @@ pub async fn label(name: &str) -> Option<String> {
     .ok()
 }
 
+// Older images (e.g. API 24/25 `default`) have no SystemImage.TagDisplay.
+fn known_tag_display(tag_dir: &str) -> String {
+    match tag_dir {
+        "default" => "Default Android System Image",
+        "google_apis" => "Google APIs",
+        "google_apis_playstore" => "Google Play",
+        "aosp_atd" => "AOSP ATD",
+        "google_atd" => "Google ATD",
+        other => other,
+    }
+    .to_owned()
+}
+
 fn tag_list(tags: &str) -> Vec<&str> {
     tags.split(',')
         .map(str::trim)
@@ -397,7 +414,7 @@ fn scan_images(root: &Path) -> Vec<Found> {
                         tag_display: text(&props, "SystemImage.TagDisplay")
                             .map(|display| tag_list(&display).join(", "))
                             .filter(|display| !display.is_empty())
-                            .unwrap_or_else(|| tag_dir.clone()),
+                            .unwrap_or_else(|| known_tag_display(&tag_dir)),
                         abi: text(&props, "SystemImage.Abi").unwrap_or_else(|| abi_dir.clone()),
                         description: text(&props, "Pkg.Desc"),
                     },
