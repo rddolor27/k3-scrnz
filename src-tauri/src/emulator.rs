@@ -5,13 +5,14 @@ use std::process::{Child, Stdio};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 use tauri::State;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
 use tokio::net::TcpStream;
 use tokio::net::tcp::OwnedReadHalf;
 
 use crate::adb::{AdbServer, DeviceSel, DeviceState};
+use crate::avd::{self, Avd, AvdState};
 use crate::devices::DeviceHub;
 
 #[cfg(windows)]
@@ -20,6 +21,7 @@ const LIST_TIMEOUT: Duration = Duration::from_secs(15);
 const EARLY_EXIT: Duration = Duration::from_secs(4);
 const CONSOLE_TIMEOUT: Duration = Duration::from_secs(5);
 const LOG_TAIL: usize = 600;
+const MAX_NAME_LEN: usize = 64;
 /// Console ports are even, from 5554; adb uses port + 1. Any emulator may use
 /// up to 5682.
 const FIRST_PORT: u16 = 5554;
@@ -56,11 +58,11 @@ impl Serialize for EmulatorError {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Avd {
-    pub name: String,
-    pub serial: Option<String>,
+#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct StartOptions {
+    pub cold_boot: bool,
+    pub wipe_data: bool,
 }
 
 struct Launched {
@@ -102,12 +104,15 @@ impl EmulatorState {
     }
 }
 
-fn valid_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= 128
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+// Names become file names and `-avd` arguments: no leading `-` or `.`, and no trailing `.` (Windows drops it).
+pub fn valid_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|first| first.is_ascii_alphanumeric())
+        && name.len() <= MAX_NAME_LEN
+        && !name.ends_with('.')
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
 /// Newer emulators add `INFO |` lines to `-list-avds`; they never pass `valid_name`.
@@ -128,7 +133,7 @@ fn console_port(serial: &str) -> Option<u16> {
 }
 
 /// Android 12+ uses `ro.boot.qemu`.
-async fn running_avd(serial: &str) -> Option<String> {
+pub async fn running_avd(serial: &str) -> Option<String> {
     let out = crate::adb::shell(
         &AdbServer::default(),
         &DeviceSel::Serial(serial.to_owned()),
@@ -154,13 +159,7 @@ async fn free_port() -> Option<u16> {
     None
 }
 
-#[tauri::command]
-pub async fn list_avds(
-    state: State<'_, EmulatorState>,
-    hub: State<'_, Arc<DeviceHub>>,
-) -> Result<Vec<Avd>, EmulatorError> {
-    let exe = state.exe.clone().ok_or(EmulatorError::NotInstalled)?;
-    lock(&state.launched).retain(|_, launched| launched.running());
+async fn list_with_emulator(exe: PathBuf) -> Result<Vec<String>, EmulatorError> {
     let mut list = tokio::process::Command::new(exe);
     list.arg("-list-avds").stdin(Stdio::null());
     #[cfg(windows)]
@@ -168,36 +167,99 @@ pub async fn list_avds(
     let output = tokio::time::timeout(LIST_TIMEOUT, list.output())
         .await
         .map_err(|_| EmulatorError::Timeout)??;
-    let names = parse_avds(&String::from_utf8_lossy(&output.stdout));
+    Ok(parse_avds(&String::from_utf8_lossy(&output.stdout)))
+}
 
-    let emulators: Vec<String> = hub
+async fn live_avds(state: &EmulatorState, hub: &DeviceHub) -> HashMap<String, (AvdState, String)> {
+    let online: Vec<String> = hub
         .views()
         .into_iter()
         .filter(|d| d.serial.starts_with("emulator-") && d.state == DeviceState::Device && !d.gone)
         .map(|d| d.serial)
         .collect();
-    let mut running = Vec::new();
-    for serial in emulators {
-        if let Some(avd) = running_avd(&serial).await {
-            running.push((avd, serial));
+    let launched: Vec<(String, String)> = {
+        let mut launched = lock(&state.launched);
+        launched.retain(|_, l| l.running());
+        launched
+            .iter()
+            .map(|(name, l)| (name.clone(), format!("emulator-{}", l.port)))
+            .collect()
+    };
+    let mut live = HashMap::new();
+    for serial in &online {
+        let name = match launched
+            .iter()
+            .find(|(_, port_serial)| port_serial == serial)
+        {
+            Some((name, _)) => Some(name.clone()),
+            None => running_avd(serial).await,
+        };
+        if let Some(name) = name {
+            live.insert(name, (AvdState::Running, serial.clone()));
         }
     }
-    Ok(names
-        .into_iter()
-        .map(|name| Avd {
-            serial: running
-                .iter()
-                .find(|(avd, _)| *avd == name)
-                .map(|(_, serial)| serial.clone()),
-            name,
-        })
-        .collect())
+    for (name, serial) in launched {
+        if !online.contains(&serial) {
+            live.entry(name).or_insert((AvdState::Booting, serial));
+        }
+    }
+    live
+}
+
+pub struct Reservation<'a> {
+    state: &'a EmulatorState,
+    name: String,
+}
+
+impl Drop for Reservation<'_> {
+    fn drop(&mut self) {
+        lock(&self.state.starting).remove(&self.name);
+    }
+}
+
+/// Holds the AVD's "starting" slot so `start_emulator` can't race a delete.
+pub async fn reserve_idle<'a>(
+    state: &'a EmulatorState,
+    hub: &DeviceHub,
+    name: &str,
+) -> Option<Reservation<'a>> {
+    if !lock(&state.starting).insert(name.to_owned()) {
+        return None;
+    }
+    let reservation = Reservation {
+        state,
+        name: name.to_owned(),
+    };
+    (!live_avds(state, hub).await.contains_key(name)).then_some(reservation)
+}
+
+#[tauri::command]
+pub async fn list_avds(
+    state: State<'_, EmulatorState>,
+    hub: State<'_, Arc<DeviceHub>>,
+) -> Result<Vec<Avd>, EmulatorError> {
+    let exe = state.exe.clone().ok_or(EmulatorError::NotInstalled)?;
+    let mut names = avd::scan_names().await;
+    if names.is_empty() {
+        names = list_with_emulator(exe).await?;
+    }
+    let mut avds = avd::read_all(names).await;
+    let live = live_avds(&state, &hub).await;
+    for entry in &mut avds {
+        if let Some((avd_state, serial)) = live.get(&entry.name) {
+            entry.state = *avd_state;
+            entry.serial = Some(serial.clone());
+        }
+    }
+    Ok(avds)
 }
 
 #[tauri::command]
 pub async fn start_emulator(
     state: State<'_, EmulatorState>,
+    hub: State<'_, Arc<DeviceHub>>,
     avd: String,
+    options: Option<StartOptions>,
 ) -> Result<String, EmulatorError> {
     if !valid_name(&avd) {
         return Err(EmulatorError::InvalidName(avd));
@@ -212,7 +274,14 @@ pub async fn start_emulator(
     if !lock(&state.starting).insert(avd.clone()) {
         return Err(EmulatorError::AlreadyStarting(avd));
     }
-    let result = launch(exe, state.log_dir.clone(), &avd).await;
+    let result = launch(
+        exe,
+        state.log_dir.clone(),
+        &avd,
+        options.unwrap_or_default(),
+        &hub,
+    )
+    .await;
     lock(&state.starting).remove(&avd);
     let launched = result?;
     let serial = format!("emulator-{}", launched.port);
@@ -224,6 +293,8 @@ async fn launch(
     exe: PathBuf,
     log_dir: Option<PathBuf>,
     avd: &str,
+    options: StartOptions,
+    hub: &Arc<DeviceHub>,
 ) -> Result<Launched, EmulatorError> {
     let port = free_port().await.ok_or(EmulatorError::NoFreePort)?;
     let log_path = log_dir.map(|dir| dir.join(format!("emulator-{avd}.log")));
@@ -253,13 +324,28 @@ async fn launch(
         .stdin(Stdio::null())
         .stdout(stdout)
         .stderr(stderr);
+    if options.cold_boot {
+        command.arg("-no-snapshot-load");
+    }
+    if options.wipe_data {
+        command.arg("-wipe-data");
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         command.creation_flags(CREATE_NO_WINDOW);
     }
     let mut child = command.spawn()?;
-    tracing::info!(avd, port, pid = child.id(), "emulator started headless");
+    tracing::info!(
+        avd,
+        port,
+        pid = child.id(),
+        cold_boot = options.cold_boot,
+        wipe_data = options.wipe_data,
+        "emulator started headless"
+    );
+    let serial = format!("emulator-{port}");
+    hub.name_emulator(&serial, avd).await;
 
     let deadline = tokio::time::Instant::now() + EARLY_EXIT;
     while tokio::time::Instant::now() < deadline {
@@ -272,6 +358,7 @@ async fn launch(
                 None => String::new(),
             };
             tracing::warn!(avd, %status, output = %tail, "emulator exited early");
+            hub.forget_emulator(&serial);
             return Err(EmulatorError::Exited(if tail.is_empty() {
                 status.to_string()
             } else {

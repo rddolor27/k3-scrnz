@@ -634,12 +634,6 @@ input {
 	border-color: var(--accent);
 }
 
-.emulator-row .link {
-	border: 0;
-	background: none;
-	font-size: 12px;
-}
-
 .stop-emulator {
 	display: flex;
 	align-items: center;

@@ -4,7 +4,7 @@ import logoUrl from '../assets/brand/icon.svg'
 import { DeviceGrid } from './components/DeviceGrid'
 import { DevicePane } from './components/DevicePane'
 import { DeviceTabs } from './components/DeviceTabs'
-import { EmulatorMenu } from './components/EmulatorMenu'
+import { EmulatorManager } from './components/EmulatorManager'
 import { StatusBar } from './components/StatusBar'
 import { type AdbStatus, setDeviceName, setVisibleDevice } from './lib/ipc'
 import { error } from './lib/log'
@@ -115,7 +115,7 @@ export const App = (): JSX.Element => {
 					gridSelected={showGrid}
 				/>
 				<span className='topbar-tools' ref={setGridTools} />
-				<EmulatorMenu onOpen={select} />
+				<EmulatorManager onOpen={select} />
 			</header>
 			<main className='content'>
 				{!current && <NoDevices adb={adb} />}
@@ -158,7 +158,8 @@ const NoDevices = ({ adb }: NoDevicesProps): JSX.Element => (
 			<>
 				<h1>No devices</h1>
 				<p className='muted'>
-					Connect a device over USB with USB debugging turned on.
+					Connect a device over USB with USB debugging turned on, or
+					start one under Emulators.
 				</p>
 			</>
 		) : (

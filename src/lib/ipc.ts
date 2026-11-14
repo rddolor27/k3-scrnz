@@ -59,15 +59,76 @@ export interface AppStats {
 export const getAppStats = (): Promise<AppStats> =>
 	invoke<AppStats>('get_app_stats')
 
+export type AvdState = 'stopped' | 'booting' | 'running'
+
+export interface DisplaySize {
+	width: number
+	height: number
+	density: number
+}
+
 export interface Avd {
 	name: string
 	serial: string | null
+	state: AvdState
+	displayName: string | null
+	apiLevel: number | null
+	tag: string | null
+	tagDisplay: string | null
+	abi: string | null
+	width: number | null
+	height: number | null
+	density: number | null
+	ramMb: number | null
+	playStore: boolean
+	customerDisplay: DisplaySize | null
+	path: string | null
+}
+
+export interface SystemImage {
+	id: string
+	apiLevel: number
+	tag: string
+	tagDisplay: string
+	abi: string
+	playStore: boolean
+	description: string | null
+}
+
+export interface AvdSpec {
+	name: string
+	displayName: string | null
+	image: string
+	width: number
+	height: number
+	density: number
+	ramMb: number
+	storageGb: number
+	deviceName: string | null
+	customerDisplay: DisplaySize | null
+}
+
+export interface StartOptions {
+	coldBoot: boolean
+	wipeData: boolean
 }
 
 export const listAvds = (): Promise<Avd[]> => invoke<Avd[]>('list_avds')
 
-export const startEmulator = (avd: string): Promise<string> =>
-	invoke<string>('start_emulator', { avd })
+export const listSystemImages = (): Promise<SystemImage[]> =>
+	invoke<SystemImage[]>('list_system_images')
+
+export const createAvd = (spec: AvdSpec): Promise<Avd> =>
+	invoke<Avd>('create_avd', { spec })
+
+export const deleteAvd = (name: string): Promise<void> =>
+	invoke<void>('delete_avd', { name })
+
+export const startEmulator = (
+	avd: string,
+	options?: StartOptions,
+): Promise<string> =>
+	invoke<string>('start_emulator', { avd, options: options ?? null })
 
 export const stopEmulator = (serial: string): Promise<void> =>
 	invoke<void>('stop_emulator', { serial })

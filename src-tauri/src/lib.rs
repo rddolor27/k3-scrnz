@@ -1,5 +1,6 @@
 pub mod adb;
 mod apps;
+mod avd;
 mod capture;
 mod config;
 mod devices;
@@ -129,6 +130,9 @@ pub fn run() {
             emulator::list_avds,
             emulator::start_emulator,
             emulator::stop_emulator,
+            avd::list_system_images,
+            avd::create_avd,
+            avd::delete_avd,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
