@@ -25,7 +25,8 @@ use filter::{App, LogFilter, Matcher};
 use ring::{LogEntry, Ring};
 
 /// Text buffers only: `events`, `stats` and `security` carry binary payloads.
-const LOGCAT_CMD: &str = "logcat -B -b main,system,crash";
+/// One `-b` per buffer: Android 7 and older reject a comma-separated list.
+const LOGCAT_CMD: &str = "logcat -B -b main -b system -b crash";
 const BACKLOG: u32 = 500;
 const RETRY: Duration = Duration::from_secs(1);
 const TICK: Duration = Duration::from_millis(100);
