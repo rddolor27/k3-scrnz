@@ -15,7 +15,15 @@ export interface Placement<T> {
 	rect: Rect
 }
 
-const fit = (size: Size, cell: Rect): Rect => {
+export interface RowLayout {
+	width: number
+	height: number
+	cells: Rect[]
+}
+
+const evenUp = (n: number): number => n + (n % 2)
+
+export const fit = (size: Size, cell: Rect): Rect => {
 	const scale = Math.min(cell.w / size.width, cell.h / size.height)
 	const w = size.width * scale
 	const h = size.height * scale
@@ -50,6 +58,30 @@ const place = <T extends Size>(
 		}
 		return { item, rect: fit(item, cell) }
 	})
+}
+
+export const layoutRow = (
+	sizes: Size[],
+	gap: number,
+	maxWidth: number,
+	maxHeight: number,
+): RowLayout => {
+	const totalWidth = sizes.reduce((sum, s) => sum + s.width, 0)
+	const tallest = sizes.reduce((max, s) => Math.max(max, s.height), 0)
+	const scale = Math.min(
+		1,
+		(maxWidth - gap * (sizes.length - 1)) / totalWidth,
+		maxHeight / tallest,
+	)
+	const height = evenUp(Math.floor(tallest * scale))
+	let x = 0
+	const cells = sizes.map((s): Rect => {
+		const w = Math.floor(s.width * scale)
+		const cell: Rect = { x, y: 0, w, h: height }
+		x += w + gap
+		return cell
+	})
+	return { width: evenUp(x - gap), height, cells }
 }
 
 // Tries every column count and keeps the one whose fitted tiles cover the most area.

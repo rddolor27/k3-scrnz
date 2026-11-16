@@ -8,7 +8,10 @@ import {
 } from '../lib/device-state'
 import { type DeviceView, isEmulator, stopEmulator } from '../lib/ipc'
 import { warn } from '../lib/log'
+import { useDeviceRecording } from '../state/device-recording'
+import { useNote } from '../state/note'
 import { AppMenu } from './AppMenu'
+import { RecordingTimer } from './CaptureButtons'
 import { CustomerScreens, useCustomerDisplays } from './CustomerScreens'
 import { FileExplorer } from './FileExplorer'
 import { Icon } from './Icon'
@@ -153,6 +156,8 @@ const ScreenLayout = ({
 	hidden,
 }: ScreenLayoutProps): JSX.Element => {
 	const customers = useCustomerDisplays(serial)
+	const { note, showNote } = useNote()
+	const recording = useDeviceRecording({ serial, showNote })
 	const [bottom, setBottom] = useState<BottomPanel>('logcat')
 	const [logHeight, setLogHeight] = useState(() =>
 		readNumber(LOG_HEIGHT_KEY, 260),
@@ -212,16 +217,56 @@ const ScreenLayout = ({
 					displayId={0}
 					role='main'
 					maxSize={isEmulator(serial) ? EMULATOR_MAX_SIZE : undefined}
+					keepAlive={recording.since !== null}
+					extraNote={note}
+					captureExtra={
+						customers.length > 0 ? (
+							recording.since === null ? (
+								<button
+									className='record-button'
+									onClick={recording.toggle}
+									disabled={
+										!showCustomer ||
+										!recording.ready ||
+										recording.busy
+									}
+									title={
+										showCustomer
+											? 'Record the main and customer screens side by side as one MP4'
+											: 'Show the customer screen to record both'
+									}
+								>
+									<Icon name='record' />
+									{customers.length > 1
+										? 'Record all'
+										: 'Record both'}
+								</button>
+							) : (
+								<button
+									className='recording'
+									onClick={recording.toggle}
+									disabled={recording.busy}
+									title='Stop recording'
+								>
+									<Icon name='stop' />
+									<RecordingTimer since={recording.since} />
+								</button>
+							)
+						) : null
+					}
 				/>
 				{customers.length > 0 && (
 					<>
 						<button
 							className='customer-toggle'
 							onClick={toggleCustomer}
+							disabled={recording.since !== null}
 							title={
-								showCustomer
-									? 'Hide the customer screen'
-									: 'Show the customer screen'
+								recording.since !== null
+									? 'Stop the recording to hide the customer screen'
+									: showCustomer
+										? 'Hide the customer screen'
+										: 'Show the customer screen'
 							}
 							aria-label={
 								showCustomer
@@ -241,6 +286,7 @@ const ScreenLayout = ({
 							<CustomerScreens
 								serial={serial}
 								displays={customers}
+								keepAlive={recording.since !== null}
 							/>
 						)}
 					</>

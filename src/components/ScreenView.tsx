@@ -21,9 +21,9 @@ import {
 } from '../lib/ipc'
 import { error, info } from '../lib/log'
 import { useApkDrop } from '../state/apk-drop'
-import { useNote } from '../state/note'
+import { type Note, useNote } from '../state/note'
 import { useScreenCapture } from '../state/screen-capture'
-import { registerTap } from '../video/frame-taps'
+import { registerTap, tapKey } from '../video/frame-taps'
 import type { WorkerEvent, WorkerInit, WorkerRequest } from '../video/protocol'
 import { CaptureButtons } from './CaptureButtons'
 import { IconButton } from './IconButton'
@@ -49,6 +49,9 @@ interface ScreenViewProps {
 	toolbarStart?: ReactNode
 	maxSize?: number
 	tapLabel?: string
+	keepAlive?: boolean
+	captureExtra?: ReactNode
+	extraNote?: Note | null
 }
 
 export const ScreenView = ({
@@ -60,6 +63,9 @@ export const ScreenView = ({
 	toolbarStart,
 	maxSize,
 	tapLabel,
+	keepAlive = false,
+	captureExtra,
+	extraNote,
 }: ScreenViewProps): JSX.Element => {
 	const hostRef = useRef<HTMLDivElement>(null)
 	const controlRef = useRef<ControlSocket | null>(null)
@@ -97,12 +103,24 @@ export const ScreenView = ({
 	const canCapture =
 		session !== null && phase.kind === 'streaming' && hasFrame && !stale
 	const suspendable =
-		tapLabel === undefined && capture.recordingSince === null
+		tapLabel === undefined && !keepAlive && capture.recordingSince === null
 	const suspendableRef = useRef(suspendable)
+	const sizeRef = useRef(size)
+	const keepAliveRef = useRef(keepAlive)
+	const syncVisibilityRef = useRef<(() => void) | null>(null)
 
 	useEffect(() => {
 		suspendableRef.current = suspendable
 	}, [suspendable])
+
+	useEffect(() => {
+		sizeRef.current = size
+	}, [size])
+
+	useEffect(() => {
+		keepAliveRef.current = keepAlive
+		syncVisibilityRef.current?.()
+	}, [keepAlive])
 
 	useEffect(() => {
 		const host = hostRef.current
@@ -196,23 +214,29 @@ export const ScreenView = ({
 				worker.postMessage(request)
 			}, SUSPEND_AFTER_MS)
 		}
+		const syncVisibility = (): void => {
+			const request: WorkerRequest = {
+				type: 'visibility',
+				visible: isShown() || keepAliveRef.current,
+			}
+			worker.postMessage(request)
+		}
 		const reportVisibility = (): void => {
 			const next = isShown()
 			if (next === shown) return
 			shown = next
-			const request: WorkerRequest = { type: 'visibility', visible: next }
-			worker.postMessage(request)
+			syncVisibility()
 			if (next) window.clearTimeout(suspendTimer)
 			else suspendLater()
 		}
 		if (!shown) {
-			const request: WorkerRequest = {
-				type: 'visibility',
-				visible: false,
-			}
-			worker.postMessage(request)
+			syncVisibility()
 			suspendLater()
 		}
+		syncVisibilityRef.current = syncVisibility
+		cleanups.push(() => {
+			syncVisibilityRef.current = null
+		})
 		watchVisibility(reportVisibility)
 		cleanups.push(() => window.clearTimeout(suspendTimer))
 
@@ -548,9 +572,17 @@ export const ScreenView = ({
 	}, [serial, displayId, role, interactive, attempt, maxSize, suspended])
 
 	useEffect(() => {
-		if (tapLabel === undefined || !tapWorker) return
-		return registerTap({ key: serial, label: tapLabel, worker: tapWorker })
-	}, [serial, tapLabel, tapWorker])
+		if (!tapWorker) return
+		return registerTap({
+			key: tapKey(serial, displayId),
+			serial,
+			displayId,
+			role,
+			label: tapLabel ?? '',
+			worker: tapWorker,
+			size: () => sizeRef.current,
+		})
+	}, [serial, displayId, role, tapLabel, tapWorker])
 
 	const press = (keycode: number): void => {
 		controlRef.current?.send({
@@ -594,7 +626,8 @@ export const ScreenView = ({
 	const rotateDevice = (): void => {
 		controlRef.current?.send({ t: 'rotateDevice' })
 	}
-	const revealPath = note?.revealPath ?? null
+	const shownNote = extraNote ?? note
+	const revealPath = shownNote?.revealPath ?? null
 	const captureButtons = (
 		<CaptureButtons
 			compact={compact}
@@ -672,6 +705,7 @@ export const ScreenView = ({
 						/>
 					</span>
 					{captureButtons}
+					{captureExtra}
 					<span className='spacer' />
 					<span
 						className='screen-stats'
@@ -739,13 +773,13 @@ export const ScreenView = ({
 					!interactive && (
 						<div className='screen-overlay faint'>No content</div>
 					)}
-				{note && (
+				{shownNote && (
 					<div
 						className={
-							note.error ? 'screen-note err' : 'screen-note'
+							shownNote.error ? 'screen-note err' : 'screen-note'
 						}
 					>
-						<span>{note.text}</span>
+						<span>{shownNote.text}</span>
 						{revealPath !== null && (
 							<button
 								className='link'

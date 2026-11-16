@@ -700,11 +700,18 @@ pub async fn start_grid_recording(
     name: String,
     width: u32,
     height: u32,
+    serial: Option<String>,
 ) -> Result<GridRecording, CaptureError> {
     let size = grid_size(width, height)?;
     let name = file_name(&name, ".mp4")?;
-    let dir = files::downloads_root(&app)?;
-    tokio::fs::create_dir_all(&dir).await?;
+    let dir = match &serial {
+        Some(serial) => capture_dir(&app, serial).await?,
+        None => {
+            let dir = files::downloads_root(&app)?;
+            tokio::fs::create_dir_all(&dir).await?;
+            dir
+        }
+    };
     let path = files::reserve_unique(&dir, &name).await?;
     let file = match open_for_writing(&path).await {
         Ok(file) => file,
@@ -742,7 +749,7 @@ pub async fn start_grid_recording(
             registry.expire(&id);
         }
     });
-    tracing::info!(session = %id, path = %path.display(), width, height, "grid recording started");
+    tracing::info!(session = %id, serial = ?serial, path = %path.display(), width, height, "grid recording started");
     Ok(GridRecording {
         id,
         path: path.display().to_string(),

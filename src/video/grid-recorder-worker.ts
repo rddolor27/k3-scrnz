@@ -1,6 +1,8 @@
 import { connect } from '../lib/ws'
-import { layoutGrid, type Rect } from './grid-layout'
+import { pickEncoderConfig } from './encoder-config'
+import { fit, layoutGrid, type Rect } from './grid-layout'
 import type {
+	GridCell,
 	GridLogLevel,
 	GridRecorderAdd,
 	GridRecorderEvent,
@@ -12,9 +14,6 @@ import type { TapFrame } from './protocol'
 const K_FRAME = 3
 const ENVELOPE_BYTES = 12
 const END_MESSAGE = '{"t":"end"}'
-const CODECS = ['avc1.4D0028', 'avc1.42E028']
-const BITRATE = 8_000_000
-const FRAMERATE = 30
 const TICK_MS = 33
 const KEEPALIVE_MS = 1000
 const KEY_EVERY_MS = 2000
@@ -47,6 +46,7 @@ interface Pipeline {
 
 const tiles = new Map<string, Tile>()
 let order: string[] = []
+let cells: GridCell[] | null = null
 let socket: WebSocket | null = null
 let pipeline: Pipeline | null = null
 let ticker = 0
@@ -128,6 +128,15 @@ const drawLabel = (
 const drawTiles = ({ canvas, ctx }: Pipeline): void => {
 	ctx.fillStyle = BACKGROUND
 	ctx.fillRect(0, 0, canvas.width, canvas.height)
+	if (cells) {
+		for (const cell of cells) {
+			const frame = tiles.get(cell.key)?.frame
+			if (!frame) continue
+			const { x, y, w, h } = fit(frame, cell.rect)
+			ctx.drawImage(frame.bitmap, x, y, w, h)
+		}
+		return
+	}
 	const placed = layoutGrid(readyTiles(), canvas.width, canvas.height, GAP)
 	for (const { item, rect } of placed) {
 		ctx.drawImage(item.bitmap, rect.x, rect.y, rect.w, rect.h)
@@ -184,27 +193,6 @@ const sendChunk = (chunk: EncodedVideoChunk): void => {
 	} catch (e) {
 		fail(`Sending a chunk failed: ${errorText(e)}`)
 	}
-}
-
-const pickEncoderConfig = async (
-	width: number,
-	height: number,
-): Promise<VideoEncoderConfig> => {
-	for (const codec of CODECS) {
-		const config: VideoEncoderConfig = {
-			codec,
-			width,
-			height,
-			bitrate: BITRATE,
-			framerate: FRAMERATE,
-			avc: { format: 'annexb' },
-		}
-		const { supported } = await VideoEncoder.isConfigSupported(config)
-		if (supported) return config
-	}
-	throw new Error(
-		`This system cannot encode H.264 at ${width}x${height} (tried ${CODECS.join(', ')}).`,
-	)
 }
 
 const openSocket = (init: GridRecorderInit): Promise<WebSocket> =>
@@ -264,6 +252,7 @@ const finish = async (): Promise<void> => {
 
 const start = async (init: GridRecorderInit): Promise<void> => {
 	try {
+		cells = init.cells ?? null
 		const config = await pickEncoderConfig(init.width, init.height)
 		const ws = await openSocket(init)
 		const canvas = new OffscreenCanvas(init.width, init.height)

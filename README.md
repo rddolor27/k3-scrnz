@@ -14,7 +14,7 @@ Built with Tauri 2 (Rust and React/TypeScript). It talks to the adb server that 
 - **Customer screen.** A second (presentation) display is detected and mirrored next to the main screen, view-only.
 - **All devices.** Every device as a tile on one board. Drag a tile by its header, resize it from any side, drag the divider between its two screens, hide the devices you don't need there, and record the whole board as one MP4.
 - **Logcat.** Live, filtered by level, tag, text or regex, and by the app you pick.
-- **Capture.** Screenshots (saved and copied to the clipboard) and MP4 recordings of any screen.
+- **Capture.** Screenshots (saved and copied to the clipboard) and MP4 recordings of any screen, or of a device's main and customer screens side by side in one video.
 - **Files.** A tree of the device's files with upload, download, new folder and delete, including app data of debuggable apps.
 - **Apps.** Drop an `.apk` on a screen to install it; restart, force-stop or clear the data of the selected app.
 - **Terminal.** A device shell, or a terminal in a project folder that already targets the device (`ANDROID_SERIAL` is set and the SDK's adb comes first on `PATH`). Choose PowerShell, Git Bash or Command Prompt. React Native and Expo projects start building right away.

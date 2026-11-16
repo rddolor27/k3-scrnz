@@ -92,6 +92,7 @@ interface CustomerScreensProps {
 	compact?: boolean
 	maxSize?: number
 	share?: number
+	keepAlive?: boolean
 }
 
 export const CustomerScreens = ({
@@ -100,6 +101,7 @@ export const CustomerScreens = ({
 	compact = false,
 	maxSize,
 	share,
+	keepAlive,
 }: CustomerScreensProps): JSX.Element => (
 	<aside
 		className='customer-panel'
@@ -122,6 +124,7 @@ export const CustomerScreens = ({
 				}
 				compact={compact}
 				maxSize={maxSize}
+				keepAlive={keepAlive}
 			/>
 		))}
 	</aside>

@@ -1,3 +1,10 @@
+import type { Rect } from './grid-layout'
+
+export interface GridCell {
+	key: string
+	rect: Rect
+}
+
 export interface GridRecorderInit {
 	type: 'init'
 	port: number
@@ -5,6 +12,7 @@ export interface GridRecorderInit {
 	recordingId: string
 	width: number
 	height: number
+	cells?: GridCell[]
 }
 
 export interface GridRecorderAdd {

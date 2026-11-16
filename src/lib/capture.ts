@@ -21,6 +21,9 @@ export const captureName = (
 
 export const gridRecordingName = (): string => `Grid recording ${stamp()}.mp4`
 
+export const screensRecordingName = (): string =>
+	`Recording ${stamp()} all screens.mp4`
+
 export const formatElapsed = (ms: number): string => {
 	const seconds = Math.max(0, Math.floor(ms / 1000))
 	return `${pad(Math.floor(seconds / 60))}:${pad(seconds % 60)}`

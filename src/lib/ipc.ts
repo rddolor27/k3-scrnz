@@ -443,11 +443,13 @@ export const startGridRecording = (
 	name: string,
 	width: number,
 	height: number,
+	serial?: string,
 ): Promise<GridRecordingStarted> =>
 	invoke<GridRecordingStarted>('start_grid_recording', {
 		name,
 		width,
 		height,
+		serial: serial ?? null,
 	})
 
 export const stopGridRecording = (id: string): Promise<RecordingEnded> =>

@@ -790,12 +790,13 @@ input {
 .screen-toolbar button:hover:not(:disabled),
 .screen-label button:hover:not(:disabled),
 .screen-overlay button:hover,
-.customer-toggle:hover {
+.customer-toggle:hover:not(:disabled) {
 	border-color: var(--accent);
 }
 
 .screen-toolbar button:disabled,
-.screen-label button:disabled {
+.screen-label button:disabled,
+.customer-toggle:disabled {
 	opacity: 0.45;
 	cursor: default;
 }
