@@ -57,6 +57,12 @@ interface Session {
 
 type SessionPatch = Partial<Omit<Session, 'serial'>>
 
+// Panes unmount while the grid is shown; each device's filter outlives its pane here.
+const savedFilters = new Map<string, LogFilter>()
+
+export const savedLogFilter = (serial: string): LogFilter =>
+	savedFilters.get(serial) ?? DEFAULT_LOG_FILTER
+
 const EMPTY_VIEW: LogView = {
 	rows: [],
 	version: 0,
@@ -134,7 +140,6 @@ export const useLogcat = (serial: string): LogcatState => {
 	const [session, setSession] = useState<Session>(() => newSession(serial))
 	const [attempt, setAttempt] = useState(0)
 	const bufferRef = useRef<LogBuffer | null>(null)
-	const appliedFilter = useRef<LogFilter>(DEFAULT_LOG_FILTER)
 	const filterRequest = useRef(0)
 
 	const current = session.serial === serial ? session : newSession(serial)
@@ -178,7 +183,7 @@ export const useLogcat = (serial: string): LogcatState => {
 			await startLogcat(serial, channel)
 			try {
 				// start_logcat may keep an earlier mount's filter; reapply ours.
-				await setLogcatFilter(serial, appliedFilter.current)
+				await setLogcatFilter(serial, savedLogFilter(serial))
 			} catch (e) {
 				void warn(`logcat: restoring the filter failed: ${String(e)}`)
 			}
@@ -202,7 +207,7 @@ export const useLogcat = (serial: string): LogcatState => {
 		setLogcatFilter(serial, filter)
 			.then(() => {
 				if (request !== filterRequest.current) return
-				appliedFilter.current = filter
+				savedFilters.set(serial, filter)
 				setSession(patchSession(serial, { filterError: null }))
 			})
 			.catch((e: unknown) => {

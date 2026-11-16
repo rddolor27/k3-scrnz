@@ -11,7 +11,6 @@ import {
 } from 'react'
 
 import {
-	DEFAULT_LOG_FILTER,
 	FOCUS_LOG_FILTER_EVENT,
 	formatLogTime,
 	levelClass,
@@ -20,7 +19,7 @@ import {
 	type LogFilter,
 	type LogRow,
 } from '../lib/logcat'
-import { useLogcat } from '../state/logcat'
+import { savedLogFilter, useLogcat } from '../state/logcat'
 
 const ROW_H = 18
 const OVERSCAN = 30
@@ -37,13 +36,13 @@ interface FilterDraft {
 	onlyApp: boolean
 }
 
-const DEFAULT_DRAFT: FilterDraft = {
-	minLevel: DEFAULT_LOG_FILTER.minLevel,
-	tag: '',
-	text: '',
-	regex: DEFAULT_LOG_FILTER.regex,
-	onlyApp: DEFAULT_LOG_FILTER.onlyApp,
-}
+const toDraft = (filter: LogFilter): FilterDraft => ({
+	minLevel: filter.minLevel,
+	tag: filter.tag ?? '',
+	text: filter.text ?? '',
+	regex: filter.regex,
+	onlyApp: filter.onlyApp,
+})
 
 const toFilter = (draft: FilterDraft): LogFilter => {
 	const tag = draft.tag.trim()
@@ -78,7 +77,7 @@ interface LogcatPanelProps {
 export const LogcatPanel = ({ serial }: LogcatPanelProps): JSX.Element => {
 	const logcat = useLogcat(serial)
 	const { setFilter, setPaused } = logcat
-	const [draft, setDraft] = useState(DEFAULT_DRAFT)
+	const [draft, setDraft] = useState(() => toDraft(savedLogFilter(serial)))
 	const searchRef = useRef<HTMLInputElement>(null)
 	const timer = useRef<number | undefined>(undefined)
 
