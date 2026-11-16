@@ -5,6 +5,7 @@ use super::ring::LogEntry;
 
 const SYSTEM_UID: u32 = 1000;
 const MIN_PROBLEM_LEVEL: u8 = 6;
+const SYSTEM_SERVER_TAGS: [&str; 3] = ["ActivityManager", "ActivityTaskManager", "InputDispatcher"];
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,11 +69,12 @@ impl Matcher {
     }
 }
 
-/// `system_server` (uid 1000) logs the app's crashes and ANRs at `E`/`F`.
+// Vendor services share uid 1000 and log the foreground package at `E`; only `system_server`'s tags report the app's crashes and ANRs.
 fn is_app_line(entry: &LogEntry, app: &App<'_>) -> bool {
     app.uid == Some(entry.uid)
         || (entry.uid == SYSTEM_UID
             && entry.level >= MIN_PROBLEM_LEVEL
+            && SYSTEM_SERVER_TAGS.iter().any(|tag| *tag == &*entry.tag)
             && !app.package.is_empty()
             && entry.msg.contains(app.package))
 }
