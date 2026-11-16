@@ -1,6 +1,5 @@
 import { type JSX, useEffect, useState } from 'react'
 
-import logoUrl from '../assets/brand/icon.svg'
 import { DeviceGrid } from './components/DeviceGrid'
 import { DevicePane } from './components/DevicePane'
 import { DeviceTabs } from './components/DeviceTabs'
@@ -102,10 +101,6 @@ export const App = (): JSX.Element => {
 	return (
 		<div className='app'>
 			<header className='topbar'>
-				<span className='brand'>
-					<img className='brand-mark' src={logoUrl} alt='' />
-					tri.scrnz
-				</span>
 				<DeviceTabs
 					devices={devices}
 					selected={currentSerial}
