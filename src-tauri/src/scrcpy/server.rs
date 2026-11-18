@@ -15,6 +15,7 @@ pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// A just-booted emulator loads the server slowly (it took 10–15 s).
 pub const EMULATOR_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 const READ_TIMEOUT: Duration = Duration::from_secs(10);
+const LIST_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub struct Options {
     pub display_id: u32,
@@ -82,6 +83,56 @@ pub async fn start(
             Err(e.into())
         }
     }
+}
+
+// Own name pattern: the session sweep below must never delete it mid-run.
+pub async fn list_apps(
+    server: &AdbServer,
+    sel: &DeviceSel,
+    jar: &[u8],
+) -> Result<Vec<(String, String)>, ScrcpyError> {
+    let path = format!(
+        "/data/local/tmp/tri-scrnz-apps-{:016x}.jar",
+        rand::random::<u64>()
+    );
+    adb::push(server, sel, jar, &path, MODE_FILE_0644).await?;
+    let cmd = format!(
+        "CLASSPATH={} app_process / com.genymobile.scrcpy.Server {SERVER_VERSION} list_apps=true log_level=info cleanup=false",
+        shell_quote(&path)
+    );
+    let out = tokio::time::timeout(LIST_TIMEOUT, adb::shell(server, sel, &cmd)).await;
+    if let Err(e) = adb::shell(server, sel, &format!("rm -f {}", shell_quote(&path))).await {
+        tracing::debug!("app list jar not removed: {e}");
+    }
+    let out = out.map_err(|_| ScrcpyError::Timeout("the app list"))??;
+    let mut apps = parse_app_list(&String::from_utf8_lossy(&out.stdout));
+    apps.extend(parse_app_list(&String::from_utf8_lossy(&out.stderr)));
+    if apps.is_empty() {
+        return Err(ScrcpyError::Start(crate::files::output_text(
+            &out.stderr,
+            &out.stdout,
+        )));
+    }
+    Ok(apps)
+}
+
+// ` * <label padded> <package>` for system apps, ` - …` for the rest.
+fn parse_app_list(text: &str) -> Vec<(String, String)> {
+    text.lines()
+        .filter_map(|line| {
+            let rest = line
+                .strip_prefix(" * ")
+                .or_else(|| line.strip_prefix(" - "))?;
+            let (label, package) = rest.trim_end().rsplit_once(' ')?;
+            let label = label.trim();
+            let valid = !label.is_empty()
+                && package.contains('.')
+                && package
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.');
+            valid.then(|| (package.to_owned(), label.to_owned()))
+        })
+        .collect()
 }
 
 /// Run once per device before its first push, or it could delete a live session's jar.

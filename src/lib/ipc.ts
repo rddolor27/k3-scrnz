@@ -315,6 +315,14 @@ export const revealFile = (path: string): Promise<void> =>
 export const listPackages = (serial: string): Promise<string[]> =>
 	invoke<string[]>('list_packages', { serial })
 
+export interface InstalledApp {
+	package: string
+	label: string | null
+}
+
+export const listApps = (serial: string): Promise<InstalledApp[]> =>
+	invoke<InstalledApp[]>('list_apps', { serial })
+
 export type AppAction = 'restart' | 'forceStop' | 'clearData'
 
 export const installApkPath = (

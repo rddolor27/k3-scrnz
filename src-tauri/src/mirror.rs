@@ -354,7 +354,7 @@ impl MirrorHub {
             .cloned()
     }
 
-    async fn jar(&self) -> Result<Arc<Vec<u8>>, ScrcpyError> {
+    pub async fn jar(&self) -> Result<Arc<Vec<u8>>, ScrcpyError> {
         self.jar
             .get_or_try_init(|| async {
                 Ok::<_, ScrcpyError>(Arc::new(tokio::fs::read(&self.jar_path).await?))

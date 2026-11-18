@@ -1,12 +1,17 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize, Serializer};
+use tauri::State;
 use tauri::ipc::{InvokeBody, Request};
 use thiserror::Error;
 
 use crate::adb::{self, AdbError, AdbServer, DeviceSel, MODE_FILE_0644, ShellOutput, shell_quote};
 use crate::files::{self, FilesError};
+use crate::mirror::MirrorHub;
+use crate::scrcpy::server;
 
 const INSTALL_HEADER: &str = "x-tri-install";
 const MAX_APK: u64 = 512 * 1024 * 1024;
@@ -239,6 +244,52 @@ async fn perform(serial: &str, package: &str, action: AppAction) -> Result<Strin
             Ok(format!("Restarted {package}"))
         }
     }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledApp {
+    package: String,
+    label: Option<String>,
+}
+
+async fn app_labels(hub: &MirrorHub, sel: &DeviceSel) -> HashMap<String, String> {
+    let labels = match hub.jar().await {
+        Ok(jar) => server::list_apps(&AdbServer::default(), sel, &jar).await,
+        Err(e) => Err(e),
+    };
+    match labels {
+        Ok(labels) => labels.into_iter().collect(),
+        Err(e) => {
+            tracing::warn!(?sel, "app names unavailable, listing packages only: {e}");
+            HashMap::new()
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn list_apps(
+    hub: State<'_, Arc<MirrorHub>>,
+    serial: String,
+) -> Result<Vec<InstalledApp>, AppsError> {
+    let sel = DeviceSel::Serial(serial);
+    let out = run_ok(&sel, "pm list packages -3").await?;
+    let mut labels = app_labels(&hub, &sel).await;
+    let mut apps: Vec<InstalledApp> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("package:"))
+        .map(|package| InstalledApp {
+            label: labels.remove(package),
+            package: package.to_owned(),
+        })
+        .collect();
+    apps.sort_by_cached_key(|app| {
+        (
+            app.label.as_deref().unwrap_or(&app.package).to_lowercase(),
+            app.package.clone(),
+        )
+    });
+    Ok(apps)
 }
 
 #[tauri::command]

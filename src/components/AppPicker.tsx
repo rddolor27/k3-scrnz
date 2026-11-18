@@ -1,9 +1,13 @@
 import { type JSX, useEffect, useState } from 'react'
 
-import { listPackages } from '../lib/ipc'
+import { type InstalledApp, listApps } from '../lib/ipc'
 import { warn } from '../lib/log'
 
 const PACKAGE_PATTERN = /^[A-Za-z]\w*(\.[A-Za-z]\w*)+$/
+
+const matches = (app: InstalledApp, needle: string): boolean =>
+	app.package.toLowerCase().includes(needle) ||
+	(app.label?.toLowerCase().includes(needle) ?? false)
 
 interface AppPickerProps {
 	serial: string
@@ -22,15 +26,15 @@ export const AppPicker = ({
 	onBack,
 	onInstall,
 }: AppPickerProps): JSX.Element => {
-	const [packages, setPackages] = useState<string[] | null>(null)
+	const [apps, setApps] = useState<InstalledApp[] | null>(null)
 	const [loadError, setLoadError] = useState<string | null>(null)
 	const [query, setQuery] = useState('')
 
 	useEffect(() => {
 		let live = true
-		listPackages(serial)
+		listApps(serial)
 			.then((list) => {
-				if (live) setPackages(list)
+				if (live) setApps(list)
 			})
 			.catch((e: unknown) => {
 				void warn(
@@ -45,11 +49,10 @@ export const AppPicker = ({
 
 	const typed = query.trim()
 	const needle = typed.toLowerCase()
-	const shown = (packages ?? []).filter((p) =>
-		p.toLowerCase().includes(needle),
-	)
+	const shown = (apps ?? []).filter((app) => matches(app, needle))
 	const canUseTyped =
-		PACKAGE_PATTERN.test(typed) && !(packages ?? []).includes(typed)
+		PACKAGE_PATTERN.test(typed) &&
+		!(apps ?? []).some((app) => app.package === typed)
 
 	return (
 		<div className='app-popover app-picker' aria-label='Choose your app'>
@@ -65,38 +68,50 @@ export const AppPicker = ({
 				className='app-picker-filter'
 				autoFocus
 				spellCheck={false}
-				placeholder='Filter, or type a package name'
+				placeholder='App name or package'
 				aria-label='Filter apps'
 				value={query}
 				onChange={(e) => setQuery(e.target.value)}
 				onKeyDown={(e) => {
 					if (e.key !== 'Enter' || busy) return
-					if (shown.length === 1) onPick(shown[0] ?? typed)
+					const only = shown.length === 1 ? shown[0] : undefined
+					if (only) onPick(only.package)
 					else if (canUseTyped) onPick(typed)
 				}}
 			/>
 			<div className='app-picker-list'>
 				{loadError && <span className='err'>{loadError}</span>}
-				{!loadError && packages === null && (
+				{!loadError && apps === null && (
 					<span className='muted'>Loading installed apps…</span>
 				)}
-				{packages !== null && shown.length === 0 && !canUseTyped && (
+				{apps !== null && shown.length === 0 && !canUseTyped && (
 					<span className='muted'>
-						{packages.length === 0
+						{apps.length === 0
 							? 'No installed apps on this device'
 							: 'No app matches'}
 					</span>
 				)}
-				{shown.map((p) => (
+				{shown.map((app) => (
 					<button
-						key={p}
-						className={p === current ? 'current' : undefined}
-						aria-current={p === current}
+						key={app.package}
+						className={
+							app.package === current
+								? 'app-choice current'
+								: 'app-choice'
+						}
+						aria-current={app.package === current}
 						disabled={busy}
-						title={p}
-						onClick={() => onPick(p)}
+						title={app.package}
+						onClick={() => onPick(app.package)}
 					>
-						{p}
+						<span className='app-choice-name'>
+							{app.label ?? app.package}
+						</span>
+						{app.label !== null && (
+							<span className='app-choice-package'>
+								{app.package}
+							</span>
+						)}
 					</button>
 				))}
 				{canUseTyped && (

@@ -120,6 +120,7 @@ pub fn run() {
             apps::install_apk_path,
             apps::install_apk_bytes,
             apps::app_action,
+            apps::list_apps,
             logcat::start_logcat,
             logcat::set_logcat_filter,
             logcat::clear_logcat,
