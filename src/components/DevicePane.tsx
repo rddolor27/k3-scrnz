@@ -26,7 +26,7 @@ type View = 'screen' | 'files' | 'info'
 type BottomPanel = 'logcat' | 'terminal'
 
 const LOG_HEIGHT_KEY = 'tri.logHeight'
-const LOG_COLLAPSED_KEY = 'tri.logCollapsed'
+const LOG_HIDDEN_KEY = 'tri.logCollapsed'
 const CUSTOMER_KEY = 'tri.customerPanel'
 const MIN_LOG = 120
 // The emulator encodes in software; a smaller stream keeps lag low.
@@ -55,6 +55,18 @@ interface DevicePaneProps {
 
 export const DevicePane = ({ device }: DevicePaneProps): JSX.Element => {
 	const [view, setView] = useState<View>('screen')
+	const [bottomHidden, setBottomHidden] = useState(() => {
+		try {
+			return window.localStorage.getItem(LOG_HIDDEN_KEY) === 'true'
+		} catch {
+			return false
+		}
+	})
+	const toggleBottom = (): void => {
+		const next = !bottomHidden
+		setBottomHidden(next)
+		save(LOG_HIDDEN_KEY, String(next))
+	}
 	const tone = stateTone(device)
 	const hint = stateHint(device)
 	const online = device.state === 'device' && !device.gone
@@ -72,6 +84,25 @@ export const DevicePane = ({ device }: DevicePaneProps): JSX.Element => {
 					<StopEmulator serial={device.serial} />
 				)}
 				{online && <AppMenu serial={device.serial} />}
+				{online && view === 'screen' && (
+					<button
+						className='panel-toggle'
+						aria-pressed={!bottomHidden}
+						title={
+							bottomHidden
+								? 'Show logcat and terminal'
+								: 'Hide logcat and terminal (logcat keeps running)'
+						}
+						aria-label={
+							bottomHidden
+								? 'Show logcat and terminal'
+								: 'Hide logcat and terminal'
+						}
+						onClick={toggleBottom}
+					>
+						<Icon name='panelBottom' />
+					</button>
+				)}
 				<div className='views' role='tablist'>
 					{(['screen', 'files', 'info'] as const).map((v) => (
 						<button
@@ -95,6 +126,8 @@ export const DevicePane = ({ device }: DevicePaneProps): JSX.Element => {
 					serial={device.serial}
 					deviceName={device.name}
 					hidden={view !== 'screen'}
+					bottomHidden={bottomHidden}
+					onHideBottom={toggleBottom}
 				/>
 			)}
 			{view === 'screen' && !online && (
@@ -149,12 +182,16 @@ interface ScreenLayoutProps {
 	serial: string
 	deviceName: string
 	hidden: boolean
+	bottomHidden: boolean
+	onHideBottom: () => void
 }
 
 const ScreenLayout = ({
 	serial,
 	deviceName,
 	hidden,
+	bottomHidden,
+	onHideBottom,
 }: ScreenLayoutProps): JSX.Element => {
 	const customers = useCustomerDisplays(serial)
 	const { note, showNote } = useNote()
@@ -163,13 +200,6 @@ const ScreenLayout = ({
 	const [logHeight, setLogHeight] = useState(() =>
 		readNumber(LOG_HEIGHT_KEY, 260),
 	)
-	const [collapsed, setCollapsed] = useState(() => {
-		try {
-			return window.localStorage.getItem(LOG_COLLAPSED_KEY) === 'true'
-		} catch {
-			return false
-		}
-	})
 	const [showCustomer, setShowCustomer] = useState(() => {
 		try {
 			return window.localStorage.getItem(CUSTOMER_KEY) !== 'hidden'
@@ -210,24 +240,14 @@ const ScreenLayout = ({
 		})
 	}
 
-	const setBottomCollapsed = (next: boolean): void => {
-		setCollapsed(next)
-		save(LOG_COLLAPSED_KEY, String(next))
-	}
-
-	const openPanel = (panel: BottomPanel): void => {
-		setBottom(panel)
-		if (collapsed) setBottomCollapsed(false)
-	}
-
 	return (
 		<div
 			className='device-layout'
 			hidden={hidden}
 			ref={layoutRef}
 			style={{
-				gridTemplateRows: collapsed
-					? 'minmax(160px, 1fr) auto'
+				gridTemplateRows: bottomHidden
+					? 'minmax(160px, 1fr)'
 					: `minmax(160px, 1fr) 6px ${logHeight}px`,
 			}}
 		>
@@ -312,7 +332,7 @@ const ScreenLayout = ({
 					</>
 				)}
 			</div>
-			{!collapsed && (
+			{!bottomHidden && (
 				<div
 					className='splitter'
 					role='separator'
@@ -320,44 +340,32 @@ const ScreenLayout = ({
 					onPointerDown={startDrag}
 				/>
 			)}
-			<div className='log-region'>
+			<div className='log-region' hidden={bottomHidden}>
 				<div className='bottom-tabs' role='tablist'>
 					{(['logcat', 'terminal'] as const).map((panel) => (
 						<button
 							key={panel}
 							role='tab'
-							aria-selected={!collapsed && bottom === panel}
-							onClick={() => openPanel(panel)}
+							aria-selected={bottom === panel}
+							onClick={() => setBottom(panel)}
 						>
 							{panel === 'logcat' ? 'Logcat' : 'Terminal'}
 						</button>
 					))}
 					<button
 						className='bottom-toggle'
-						aria-expanded={!collapsed}
-						title={
-							collapsed
-								? 'Show the bottom panel'
-								: 'Minimize the bottom panel (logcat keeps running)'
-						}
-						aria-label={
-							collapsed
-								? 'Show the bottom panel'
-								: 'Minimize the bottom panel'
-						}
-						onClick={() => setBottomCollapsed(!collapsed)}
+						title='Hide logcat and terminal (logcat keeps running)'
+						aria-label='Hide logcat and terminal'
+						onClick={onHideBottom}
 					>
-						<Icon name={collapsed ? 'chevronUp' : 'chevronDown'} />
+						<Icon name='chevronDown' />
 					</button>
 				</div>
-				<div
-					className='bottom-body'
-					hidden={collapsed || bottom !== 'logcat'}
-				>
+				<div className='bottom-body' hidden={bottom !== 'logcat'}>
 					<LogcatPanel serial={serial} />
 				</div>
 				{bottom === 'terminal' && (
-					<div className='bottom-body' hidden={collapsed}>
+					<div className='bottom-body'>
 						<Suspense
 							fallback={
 								<p className='muted'>Loading the terminal…</p>

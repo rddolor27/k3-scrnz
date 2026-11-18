@@ -947,6 +947,10 @@ input {
 	overflow: hidden;
 }
 
+.log-region[hidden] {
+	display: none;
+}
+
 .bottom-tabs {
 	display: flex;
 	flex: none;
@@ -1015,6 +1019,29 @@ input {
 .views button[aria-selected='true'] {
 	background: var(--panel-raised);
 	color: var(--accent);
+}
+
+.panel-toggle {
+	margin-left: auto;
+	padding: 5px 8px;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: none;
+	color: var(--muted);
+}
+
+.panel-toggle:hover {
+	border-color: var(--accent);
+	color: var(--text);
+}
+
+.panel-toggle[aria-pressed='true'] {
+	background: var(--panel-raised);
+	color: var(--accent);
+}
+
+.panel-toggle + .views {
+	margin-left: 0;
 }
 
 button {
