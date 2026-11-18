@@ -972,6 +972,15 @@ input {
 	color: var(--text);
 }
 
+.bottom-tabs button.bottom-toggle {
+	margin-left: auto;
+	padding: 4px 8px;
+}
+
+.bottom-tabs button:hover:not([aria-selected='true']) {
+	color: var(--text);
+}
+
 .bottom-body {
 	flex: 1;
 	min-height: 0;
