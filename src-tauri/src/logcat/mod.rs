@@ -27,7 +27,7 @@ use ring::{LogEntry, Ring};
 /// Text buffers only: `events`, `stats` and `security` carry binary payloads.
 /// One `-b` per buffer: Android 7 and older reject a comma-separated list.
 const LOGCAT_CMD: &str = "logcat -B -b main -b system -b crash";
-const BACKLOG: u32 = 500;
+const BACKLOG: u32 = 1500;
 const RETRY: Duration = Duration::from_secs(1);
 const TICK: Duration = Duration::from_millis(100);
 const RESET_ROWS: usize = 5000;
