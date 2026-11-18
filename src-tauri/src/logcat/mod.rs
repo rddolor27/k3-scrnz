@@ -152,7 +152,7 @@ impl LogcatState {
 struct Device {
     serial: String,
     started: AtomicBool,
-    package_changed: Notify,
+    uid_stale: Notify,
     inner: Mutex<Inner>,
 }
 
@@ -171,7 +171,7 @@ impl Device {
         Self {
             serial: serial.to_owned(),
             started: AtomicBool::new(false),
-            package_changed: Notify::new(),
+            uid_stale: Notify::new(),
             inner: Mutex::new(Inner {
                 ring: Ring::new(ring_size),
                 matcher: Matcher::default(),
@@ -202,7 +202,7 @@ impl Device {
             inner.app_uid = None;
             inner.pending_reset = true;
         }
-        self.package_changed.notify_one();
+        self.uid_stale.notify_one();
     }
 
     fn attach(&self, channel: Channel<Value>) {
@@ -248,9 +248,21 @@ impl Device {
         if records.is_empty() {
             return;
         }
-        let mut inner = self.inner();
-        for record in records {
-            inner.ring.push(record);
+        let app_started = {
+            let mut inner = self.inner();
+            let app_started = inner.package.as_deref().is_some_and(|package| {
+                records
+                    .iter()
+                    .any(|record| is_process_start(record, package))
+            });
+            for record in records {
+                inner.ring.push(record);
+            }
+            app_started
+        };
+        if app_started {
+            tracing::info!(serial = %self.serial, "app process started; checking its uid");
+            self.uid_stale.notify_one();
         }
     }
 
@@ -530,11 +542,23 @@ async fn run_uid_refresh(device: Arc<Device>, hub: Arc<DeviceHub>) {
         match wait {
             Some(wait) => tokio::select! {
                 () = sleep(wait) => {}
-                () = device.package_changed.notified() => {}
+                () = device.uid_stale.notified() => {}
             },
-            None => device.package_changed.notified().await,
+            None => device.uid_stale.notified().await,
         }
     }
+}
+
+// `Start proc <pid>:<process>/<uid> for …` from system_server: an uninstall and install gives the package a new uid before its first line.
+fn is_process_start(record: &Record, package: &str) -> bool {
+    record.tag == "ActivityManager"
+        && record
+            .msg
+            .strip_prefix("Start proc ")
+            .and_then(|rest| rest.split_once(':'))
+            .and_then(|(_, rest)| rest.split_once('/'))
+            .and_then(|(process, _)| process.strip_prefix(package))
+            .is_some_and(|tail| tail.is_empty() || tail.starts_with(':'))
 }
 
 async fn lookup_uid(
