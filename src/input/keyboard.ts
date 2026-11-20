@@ -12,9 +12,18 @@ export const metaState = (e: KeyboardEvent): number => {
 	return meta
 }
 
+// Windows owns Alt and Win (Alt+Tab, Start); forwarded alone they trigger device shortcuts such as the on-screen keyboard.
+const HOST_MODIFIERS: ReadonlySet<string> = new Set([
+	'AltLeft',
+	'AltRight',
+	'MetaLeft',
+	'MetaRight',
+])
+
 export type KeyAction =
 	| { kind: 'send'; message: ControlMessage }
 	| { kind: 'paste' }
+	| { kind: 'swallow' }
 	| { kind: 'ignore' }
 
 export const mapKey = (
@@ -24,6 +33,7 @@ export const mapKey = (
 ): KeyAction => {
 	// An IME's composing keydowns report keyCode 229; never forward them.
 	if (e.isComposing || e.keyCode === 229) return { kind: 'ignore' }
+	if (HOST_MODIFIERS.has(e.code)) return { kind: 'swallow' }
 	if (action === 0 && e.ctrlKey && !e.altKey && e.code === 'KeyV') {
 		return { kind: 'paste' }
 	}

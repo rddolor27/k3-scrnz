@@ -499,6 +499,7 @@ export const ScreenView = ({
 				const mapped = mapKey(e, action, repeat)
 				if (mapped.kind === 'ignore') return
 				e.preventDefault()
+				if (mapped.kind === 'swallow') return
 				if (mapped.kind === 'paste') {
 					readText()
 						.then((text) => {
